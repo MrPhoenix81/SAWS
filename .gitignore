@@ -1,0 +1,30 @@
+# --- Generated frontend build output (created by build.py) ---
+# Never edit these by hand and never commit them - they're
+# regenerated from frontend/ every time you run `python build.py`.
+/static/
+/templates/
+
+# --- Frontend build artifacts / deps ---
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+
+# --- Secrets ---
+.env
+frontend/.env
+service_account.json
+*service-account*.json
+*.json.key
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# --- OS / editor ---
+.DS_Store
+.vscode/
+
+# --- SERVICE ACCOUNT ---
+service_account.json

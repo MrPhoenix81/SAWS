@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+  body {
+    @apply bg-paper text-ink font-sans;
+  }
+  :focus-visible {
+    outline: 2px solid theme('colors.ink.900');
+    outline-offset: 2px;
+  }
+  .dark body {
+    @apply bg-paper-dark text-ink-100;
+  }
+}

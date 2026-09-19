@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, X, Check, XCircle, Pencil, Trash2, ChevronLeft, ChevronRight, Loader2, Download, FileText, FileSpreadsheet, FileDown, Copy, CheckCheck, ChevronDown, ImageIcon } from 'lucide-react';
-import { listTransfer, scmCorrectTransfer, headOfficeUpdateTransfer, headOfficeApproveTransfer, headOfficeRejectTransfer, approveTransfer, rejectTransfer, deleteTransfer, getTransferScreenshotUrl, markPageSeen, ApiError } from '@/lib/apiClient';
+import { listTransfer, scmCorrectTransfer, headOfficeUpdateTransfer, headOfficeApproveTransfer, headOfficeRejectTransfer, approveTransfer, rejectTransfer, deleteTransfer, getTransferScreenshotUrl, markPageSeen, listBranches, ApiError } from '@/lib/apiClient';
 import { useAuth } from '@/context/AuthContext';
 import type { TransferEntry, TransferStatus } from '@/types';
 import { TRANSFER_STATUS_LABELS } from '@/types';
@@ -266,7 +266,7 @@ function TransferDetailsModal({
       <div className="flex flex-wrap gap-2 pt-4 border-t border-ink-100">
         {isHO && row.canHeadOfficeApprove && <button onClick={()=>onApproveHeadOffice()} className="inline-flex items-center gap-1.5 rounded-md bg-approve text-white px-3 py-1.5 text-sm"><Check size={14}/>Approve</button>}
         {isHO && row.canHeadOfficeReject && <button onClick={()=>onReject()} className="inline-flex items-center gap-1.5 rounded-md bg-reject text-white px-3 py-1.5 text-sm"><XCircle size={14}/>Reject</button>}
-        {isHO && <button onClick={()=>onEdit()} className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 px-3 py-1.5 text-sm"><Pencil size={14}/>Edit full record</button>}
+        {isHO && row.canHeadOfficeApprove && <button onClick={()=>onEdit()} className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 px-3 py-1.5 text-sm"><Pencil size={14}/>Edit full record</button>}
         {isAdmin && row.canAdminApprove && <button onClick={()=>onApproveAdmin()} className="inline-flex items-center gap-1.5 rounded-md bg-approve text-white px-3 py-1.5 text-sm"><Check size={14}/>Approve</button>}
         {isAdmin && row.canAdminReject && <button onClick={()=>onReject()} className="inline-flex items-center gap-1.5 rounded-md bg-reject text-white px-3 py-1.5 text-sm"><XCircle size={14}/>Reject</button>}
         {userRole==='SCM' && row.canEdit && <button onClick={()=>onEdit()} className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 px-3 py-1.5 text-sm"><Pencil size={14}/>Correct & resubmit</button>}
@@ -289,6 +289,8 @@ export default function Transfer() {
   // Item 7: opening Transfer clears its sidebar "unseen" badge.
   React.useEffect(()=>{markPageSeen('transfer').then(()=>qc.invalidateQueries({queryKey:['activeCounts']})).catch(()=>{})},[]); // eslint-disable-line react-hooks/exhaustive-deps
   const params=useMemo(()=>({search:search.trim()||undefined,branch:branchFilter||undefined,page,pageSize}),[search,branchFilter,page,pageSize]);
+  const showBranch=user?.role==='Head Office'; // Head Office sees every branch, so show which one each row belongs to
+  const branchesQuery=useQuery({queryKey:['branches'],queryFn:listBranches,enabled:user?.role==='Admin'||user?.role==='Head Office'});
   const query=useQuery({queryKey:['transfer',tab,params],queryFn:()=>listTransfer(tab==='completed'?'completed':'response',params),enabled:!!user});
   const refresh=()=>{qc.invalidateQueries({queryKey:['transfer']});qc.invalidateQueries({queryKey:['notifications']});qc.invalidateQueries({queryKey:['activeCounts']});};
   const hoEdit=useMutation({
@@ -334,7 +336,7 @@ export default function Transfer() {
     <div className="rounded-lg border border-ink-100 bg-white shadow-panel overflow-hidden">
       <div className="p-4 border-b border-ink-100 flex flex-col lg:flex-row gap-3">
         <div className="relative flex-1"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-700/40"/><input value={search} onChange={e=>{setSearch(e.target.value);setPage(1)}} placeholder="Search MID, name or phone..." className="w-full pl-9 pr-3 py-2 rounded-md border border-ink-100 text-sm"/></div>
-        {(user?.role==='Admin'||user?.role==='Head Office') && <select value={branchFilter} onChange={e=>{setBranchFilter(e.target.value);setPage(1)}} className="rounded-md border border-ink-100 px-3 py-2 text-sm"><option value="">All branches</option></select>}
+        {(user?.role==='Admin'||user?.role==='Head Office') && <select value={branchFilter} onChange={e=>{setBranchFilter(e.target.value);setPage(1)}} className="rounded-md border border-ink-100 px-3 py-2 text-sm"><option value="">All branches</option>{(branchesQuery.data||[]).map(b=><option key={b} value={b}>{b}</option>)}</select>}
       </div>
       {error && <div className="m-4 rounded-md bg-reject-light text-reject text-sm px-3 py-2">{error}</div>}
       {query.isLoading ? <div className="p-10 text-center text-sm text-ink-700/60"><Loader2 className="animate-spin inline mr-2" size={16}/>Loading...</div> :
@@ -351,12 +353,13 @@ export default function Transfer() {
 
         const renderTransferRows = (list: TransferEntry[], emptyMessage: string) => (
           <tbody className="divide-y divide-ink-100">
-            {list.length===0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-ink-700/50 text-sm">{emptyMessage}</td></tr>}
+            {list.length===0 && <tr><td colSpan={showBranch?7:6} className="px-4 py-8 text-center text-ink-700/50 text-sm">{emptyMessage}</td></tr>}
             {list.map((r,i)=>
               <tr key={`${r.MID}-${r['Sl No']}`} onClick={()=>setSelectedTransfer(r)} className="hover:bg-paper/50 cursor-pointer">
                 <td className="px-4 py-3 text-ink-700/50">{(page-1)*pageSize+i+1}</td>
                 <td className="px-4 py-3 font-medium">{r.MID}</td>
                 <td className="px-4 py-3 font-medium">{r['Student Name']}</td>
+                {showBranch && <td className="px-4 py-3 text-ink-700/70">{r.Branch||'—'}</td>}
                 <td className="px-4 py-3 text-ink-700/70">{[r['Phone Number 1'],r['Phone Number 2'],r['Phone Number 3']].filter(Boolean).map((p,j)=><div key={j} className="font-mono text-xs">{p}</div>)}</td>
                 <td className="px-4 py-3"><span className={`inline-flex rounded-full px-2 py-1 text-xs ${STATUS_STYLES[r.Status]}`}>{TRANSFER_STATUS_LABELS[r.Status]||r.Status}</span></td>
                 <td className="px-4 py-3 max-w-sm">
@@ -373,7 +376,7 @@ export default function Transfer() {
 
         const tableHead = (
           <thead className="bg-paper text-xs text-ink-700/60"><tr>
-            <th className="text-left px-4 py-3">#</th><th className="text-left px-4 py-3">MID</th><th className="text-left px-4 py-3">Student</th><th className="text-left px-4 py-3">Phone numbers</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Reason</th>
+            <th className="text-left px-4 py-3">#</th><th className="text-left px-4 py-3">MID</th><th className="text-left px-4 py-3">Student</th>{showBranch && <th className="text-left px-4 py-3">Branch</th>}<th className="text-left px-4 py-3">Phone numbers</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Reason</th>
           </tr></thead>
         );
 

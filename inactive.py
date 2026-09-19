@@ -266,16 +266,22 @@ def list_inactive_(user, completed=False, params=None):
     if params.get('status'):
         rows = [r for r in rows if r.get('Status') == params['status']]
 
-    # Item 6: same server-side enforcement as the Discontinue workflow -
-    # Admin's Active page shows ONLY requests pending Admin; Head
-    # Office's Active page shows ONLY requests pending Head Office.
+    # Admin's Active page still shows ONLY requests pending Admin.
+    # Head Office is NOT restricted any more: it sees every request at
+    # every stage (like the Discontinue workflow), so it can still
+    # follow a request after it moves on to Admin. The frontend uses
+    # the 'Awaiting My Action' flag to separate the ones needing
+    # Head Office's own decision.
     if not completed:
         if user['role'] == config.ROLE_ADMIN:
             rows = [r for r in rows if r.get('Status') == config.STATUS_INACTIVE_PENDING_ADMIN]
-        elif user['role'] == config.ROLE_HEAD_OFFICE:
-            rows = [r for r in rows if r.get('Status') == config.STATUS_INACTIVE_PENDING_HEAD_OFFICE]
 
     rows.sort(key=lambda r: str(r.get('Entry Date') or ''), reverse=True)
+
+    # Head Office: bubble requests sitting in its own queue to the top
+    # (stable sort keeps the newest-first order inside each group).
+    if not completed and user['role'] == config.ROLE_HEAD_OFFICE:
+        rows.sort(key=lambda r: 0 if r.get('Status') == config.STATUS_INACTIVE_PENDING_HEAD_OFFICE else 1)
 
     page = max(int(params.get('page') or 1), 1)
     page_size = max(min(int(params.get('pageSize') or 25), 200), 1)

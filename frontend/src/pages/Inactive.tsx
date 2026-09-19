@@ -438,7 +438,7 @@ function InactiveDetailsModal({
         <div className="flex flex-wrap gap-2 pt-4 border-t border-ink-100">
           {isHO && row.canHeadOfficeApprove && <button onClick={() => onApproveHeadOffice()} className="inline-flex items-center gap-1.5 rounded-md bg-approve text-white px-3 py-1.5 text-sm"><Check size={14}/>Approve</button>}
           {isHO && row.canHeadOfficeReject && <button onClick={() => onReject()} className="inline-flex items-center gap-1.5 rounded-md bg-reject text-white px-3 py-1.5 text-sm"><XCircle size={14}/>Reject</button>}
-          {isHO && <button onClick={() => onEdit()} className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 px-3 py-1.5 text-sm"><Pencil size={14}/>Edit full record</button>}
+          {isHO && row.canHeadOfficeApprove && <button onClick={() => onEdit()} className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 px-3 py-1.5 text-sm"><Pencil size={14}/>Edit full record</button>}
           {isAdmin && row.canAdminApprove && <button onClick={() => onApproveAdmin()} className="inline-flex items-center gap-1.5 rounded-md bg-approve text-white px-3 py-1.5 text-sm"><Check size={14}/>Approve</button>}
           {isAdmin && row.canAdminReject && <button onClick={() => onReject()} className="inline-flex items-center gap-1.5 rounded-md bg-reject text-white px-3 py-1.5 text-sm"><XCircle size={14}/>Reject</button>}
           {row.canEdit && userRole === 'SCM' && <button onClick={() => onEdit()} className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 px-3 py-1.5 text-sm"><Pencil size={14}/>Correct & resubmit</button>}
@@ -853,8 +853,8 @@ export default function Inactive() {
 
         const renderInactiveRows = (list: InactiveEntry[], emptyMessage: string) => (
           <tbody>
-            {listQuery.isLoading && <tr><td colSpan={6} className="px-4 py-10 text-center text-ink-700/50">Loading...</td></tr>}
-            {!listQuery.isLoading && list.length === 0 && <tr><td colSpan={6} className="px-4 py-10 text-center text-ink-700/50">{emptyMessage}</td></tr>}
+            {listQuery.isLoading && <tr><td colSpan={user?.role === 'Head Office' ? 7 : 6} className="px-4 py-10 text-center text-ink-700/50">Loading...</td></tr>}
+            {!listQuery.isLoading && list.length === 0 && <tr><td colSpan={user?.role === 'Head Office' ? 7 : 6} className="px-4 py-10 text-center text-ink-700/50">{emptyMessage}</td></tr>}
             {list.map((row, i) => (
               <tr
                 key={`${row.MID}-${row['Sl No']}`}
@@ -864,6 +864,7 @@ export default function Inactive() {
                 <td className="px-4 py-3 text-ink-700/50">{i + 1}</td>
                 <td className="px-4 py-3 font-mono text-xs">{row.MID}</td>
                 <td className="px-4 py-3 font-medium">{row['Student Name']}</td>
+                {user?.role === 'Head Office' && <td className="px-4 py-3 text-ink-700/70">{row.Branch || '—'}</td>}
                 <td className="px-4 py-3 text-ink-700/70">{[row['Phone Number 1'], row['Phone Number 2'], row['Phone Number 3']].filter(Boolean).map((p, j) => <div key={j} className="font-mono text-xs">{p}</div>)}</td>
                 <td className="px-4 py-3"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs ${STATUS_STYLES[row.Status] || 'bg-paper text-ink-700'}`}>{INACTIVE_STATUS_LABELS[row.Status] || row.Status}</span></td>
                 <td className="px-4 py-3 max-w-sm">
@@ -884,6 +885,7 @@ export default function Inactive() {
               <th className="text-left px-4 py-3 font-medium">#</th>
               <th className="text-left px-4 py-3 font-medium">MID</th>
               <th className="text-left px-4 py-3 font-medium">Student</th>
+              {user?.role === 'Head Office' && <th className="text-left px-4 py-3 font-medium">Branch</th>}
               <th className="text-left px-4 py-3 font-medium">Phone numbers</th>
               <th className="text-left px-4 py-3 font-medium">Status</th>
               <th className="text-left px-4 py-3 font-medium">Reason</th>

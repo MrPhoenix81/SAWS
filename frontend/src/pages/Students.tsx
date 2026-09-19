@@ -713,6 +713,9 @@ export default function Students() {
                 <SortableTh label="MID" sortKey="MID" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
               )}
               <SortableTh label="Student" sortKey="Student Name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+              {user?.role === 'Head Office' && (
+                <SortableTh label="Branch" sortKey="Branch" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+              )}
               <th className="px-4 py-3 font-medium">Phone numbers</th>
               <SortableTh label="Status" sortKey="Status" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
               <th className="px-4 py-3 font-medium">{reasonColumnLabel(user?.role)}</th>
@@ -1492,6 +1495,7 @@ function StudentRow({
       <td className="px-4 py-3 text-ink-700/50">{serial}</td>
       {showsBillingColumns(user?.role) && <td className="px-4 py-3 font-mono text-xs">{row.MID}</td>}
       <td className="px-4 py-3 font-medium">{row['Student Name']}</td>
+      {isHeadOffice && <td className="px-4 py-3 text-ink-700/70">{row.Branch || '—'}</td>}
       <td className="px-4 py-3 text-ink-700/70">{phones.length ? phones.map((p, i) => <div key={i} className="font-mono text-xs">{p}</div>) : <span className="text-ink-700/30 italic">—</span>}</td>
       <td className="px-4 py-3">
         <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs ${STATUS_STYLES[status]}`}>{statusDisplay(row)}</span>

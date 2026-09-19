@@ -19,7 +19,7 @@ import {
 import { useAuth } from '@/context/AuthContext';
 import NotificationBell from '@/components/NotificationBell';
 import BulkTaskTray from '@/components/BulkTaskTray';
-import { getUnseenCounts } from '@/lib/apiClient';
+import { callApi } from '@/lib/apiClient';
 
 type NavItem = {
   to: string;
@@ -245,15 +245,15 @@ export default function AppLayout() {
   // an approve/reject/delete succeeds, making the sidebar badge update
   // immediately instead of waiting for the next poll below.
   //
-  // Item 7: this badge is the "unseen" count, NOT the "action needed"
-  // (pendingForMe) count - it goes to zero the moment the user opens
-  // that sidebar page (see markPageSeen calls in Students/Inactive/
-  // Transfer), and only climbs again once a NEW notification lands
-  // for them on that page, regardless of whether they've acted on it.
+  // The red bubble now shows PENDING cases - how many cases are waiting
+  // for THIS user's action right now (Admin: pending admin verification,
+  // Head Office: pending approval, SCM/HOF/Manager: cases they can act on).
+  // It stays until the case is actually approved/rejected/submitted; it
+  // does NOT clear just because the page was opened.
   const activeCountsQuery = useQuery({
     queryKey: ['activeCounts'],
     queryFn: async (): Promise<ActiveCounts> => {
-      const counts = await getUnseenCounts();
+      const counts = await callApi<Partial<ActiveCounts>>('pages.pendingCounts', {});
       return {
         discontinue: Number(counts.discontinue ?? 0),
         inactive: Number(counts.inactive ?? 0),
@@ -261,10 +261,9 @@ export default function AppLayout() {
       };
     },
     enabled: !!user,
-    // Still poll every 90 seconds as a fallback (e.g. if another user's
-    // action changed a count), while keeping well clear of the Sheets
-    // API's per-minute read quota.
-    refetchInterval: 90000,
+    // Poll every 60 seconds so new cases assigned by other users show up
+    // without a manual refresh.
+    refetchInterval: 60000,
     // Keep showing the last successful counts if a request fails, rather
     // than flashing back to 0.
     placeholderData: (prev: ActiveCounts | undefined) => prev,

@@ -326,6 +326,28 @@ def route_action_(action, user, payload):
     if action == 'pages.unseenCounts':
         return get_unseen_counts_(user['email'])
 
+    # ---- Sidebar red bubble: cases waiting for THIS user's action ----
+    # Uses the same role-specific 'pendingForMe' number each list
+    # function already computes, so the bubble always matches what the
+    # user sees on the page (Admin -> PENDING_ADMIN, Head Office ->
+    # PENDING_HEAD_OFFICE, SCM/HOF/Manager -> rows they can act on).
+    # Unlike 'unseenCounts' it does NOT clear when the page is opened -
+    # it only drops once the case has actually been acted on.
+    if action == 'pages.pendingCounts':
+        base = {'page': 1, 'pageSize': 1}
+
+        def _pending_(fn, *args):
+            try:
+                return int(fn(user, *args, base).get('pendingForMe') or 0)
+            except ApiError:
+                return 0  # role has no access to that workflow
+
+        return {
+            'discontinue': _pending_(list_students_, config.SHEET_RESPONSE),
+            'inactive': _pending_(list_inactive_, False),
+            'transfer': _pending_(list_transfer_, False),
+        }
+
     # ---- Self-service ----
     if action == 'auth.changePassword':
         return change_password_(user, payload)

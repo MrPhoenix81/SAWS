@@ -56,6 +56,20 @@ export function getToken() {
 }
 
 /**
+ * Sliding session support: every successful authenticated call comes
+ * back with a freshly re-issued token (see api.py). AuthContext
+ * registers a handler here so it can update stored session state
+ * (new token + reset "savedAt") and re-arm the auto-logout timer
+ * whenever real activity happens - not just clicking around, but
+ * activity the backend actually acted on.
+ */
+let onTokenRefreshed: ((token: string) => void) | null = null;
+
+export function setTokenRefreshHandler(handler: ((token: string) => void) | null) {
+  onTokenRefreshed = handler;
+}
+
+/**
  * Every backend action - reads and writes alike - goes through this
  * one function, POSTing { action, token, payload } to the Apps
  * Script web app's doPost handler. See Code.gs routeAction_ for the
@@ -71,6 +85,10 @@ export async function callApi<T>(action: string, payload: Record<string, unknown
   const envelope = response.data;
   if (!envelope.ok) {
     throw new ApiError(envelope.error || 'UNKNOWN_ERROR', envelope.message);
+  }
+  if (envelope.token) {
+    currentToken = envelope.token;
+    onTokenRefreshed?.(envelope.token);
   }
   return envelope.data as T;
 }
@@ -178,6 +196,10 @@ export async function whoAmI(token: string) {
   );
   if (!response.data.ok) {
     throw new ApiError(response.data.error || 'AUTH_FAILED', response.data.message);
+  }
+  if (response.data.token) {
+    currentToken = response.data.token;
+    onTokenRefreshed?.(response.data.token);
   }
   return response.data.data!;
 }

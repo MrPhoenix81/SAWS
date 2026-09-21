@@ -298,7 +298,7 @@ SYSTEM_LINK_HOSTING = os.environ.get('SYSTEM_LINK_HOSTING', '')
 SYSTEM_LINK_UPTIME_MONITOR = os.environ.get('SYSTEM_LINK_UPTIME_MONITOR', '')
 
 # ---- Misc ----
-SESSION_TIMEOUT_MINUTES = 60
+SESSION_TIMEOUT_MINUTES = 120
 
 # Column headers that represent a plain calendar day with no
 # meaningful time-of-day component.

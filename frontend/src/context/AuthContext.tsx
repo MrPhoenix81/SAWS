@@ -1,8 +1,17 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { setToken, whoAmI, login as apiLogin, callApi, ApiError } from '@/lib/apiClient';
+import { setToken, setTokenRefreshHandler, whoAmI, login as apiLogin, callApi, ApiError } from '@/lib/apiClient';
 import type { AuthUser } from '@/types';
 
-const SESSION_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes, mirrors SESSION_TIMEOUT_MINUTES in Config.gs
+// 120 minutes, mirrors SESSION_TIMEOUT_MINUTES in config.py.
+//
+// This is a SLIDING session, not a flat one: every authenticated API
+// call re-issues a fresh token (see api.py), and callApi/whoAmI in
+// apiClient.ts hand that fresh token to onTokenRefreshed below, which
+// resets "savedAt" and re-arms the timer. So a session only expires
+// after SESSION_TIMEOUT_MS of genuine inactivity (no successful API
+// calls at all) - not a fixed clock from login, which is what used to
+// cause "random" logouts in the middle of active use.
+const SESSION_TIMEOUT_MS = 120 * 60 * 1000;
 const STORAGE_KEY = 'sdms_session';
 
 interface StoredSession {
@@ -46,39 +55,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tracks whether the current session lives in localStorage (Remember
+  // me) or sessionStorage, so a mid-session token refresh writes back
+  // to the same place instead of guessing.
+  const rememberMeRef = useRef(false);
+  const signOutInternalRef = useRef<() => Promise<void>>(async () => {});
 
   const armSessionTimer = useCallback((savedAt: number) => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     const remaining = SESSION_TIMEOUT_MS - (Date.now() - savedAt);
     if (remaining <= 0) {
-      signOutInternal();
+      signOutInternalRef.current();
       return;
     }
     timeoutRef.current = setTimeout(() => {
-      signOutInternal();
+      signOutInternalRef.current();
     }, remaining);
-  }, []);
-
-  // Restore a session on first load, without re-authenticating.
-  useEffect(() => {
-    const stored = readStoredSession();
-    if (!stored || Date.now() - stored.savedAt > SESSION_TIMEOUT_MS) {
-      clearStoredSession();
-      setLoading(false);
-      return;
-    }
-    setToken(stored.token);
-    whoAmI(stored.token)
-      .then((resolvedUser) => {
-        setUser(resolvedUser as AuthUser);
-        armSessionTimer(stored.savedAt);
-      })
-      .catch(() => {
-        clearStoredSession();
-        setToken(null);
-      })
-      .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function signOutInternal() {
@@ -92,12 +84,76 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
   }
+  signOutInternalRef.current = signOutInternal;
+
+  // Registered once: whenever any API call (or whoAmI on page load)
+  // comes back with a freshly re-issued token, treat that as activity -
+  // bump the stored session's timestamp, persist the new token, and
+  // push the auto-logout deadline back out by the full timeout.
+  useEffect(() => {
+    setTokenRefreshHandler((newToken) => {
+      const savedAt = Date.now();
+      writeStoredSession({ token: newToken, savedAt, rememberMe: rememberMeRef.current });
+      armSessionTimer(savedAt);
+    });
+    return () => setTokenRefreshHandler(null);
+  }, [armSessionTimer]);
+
+  // Restore a session on first load, without re-authenticating.
+  useEffect(() => {
+    const stored = readStoredSession();
+    if (!stored || Date.now() - stored.savedAt > SESSION_TIMEOUT_MS) {
+      clearStoredSession();
+      setLoading(false);
+      return;
+    }
+    rememberMeRef.current = stored.rememberMe;
+    setToken(stored.token);
+    whoAmI(stored.token)
+      .then((resolvedUser) => {
+        setUser(resolvedUser as AuthUser);
+        // whoAmI refreshes the token itself (see apiClient.ts), which
+        // fires the handler above and re-arms the timer with a fresh
+        // savedAt - so this is just a safety net in case that token
+        // refresh didn't happen for any reason.
+        armSessionTimer(Date.now());
+      })
+      .catch(() => {
+        clearStoredSession();
+        setToken(null);
+      })
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Browser/OS timers are throttled or fully paused while a tab is
+  // backgrounded or the device sleeps, so the setTimeout above can
+  // fire late - or not until you switch back. Re-validate against the
+  // real elapsed wall-clock time whenever the tab regains focus, so a
+  // truly-expired session is caught immediately rather than silently
+  // outstaying its welcome, and a still-valid one keeps working
+  // without surprising you.
+  useEffect(() => {
+    function handleVisibilityChange() {
+      if (document.visibilityState !== 'visible') return;
+      const stored = readStoredSession();
+      if (!stored) return;
+      if (Date.now() - stored.savedAt > SESSION_TIMEOUT_MS) {
+        signOutInternalRef.current();
+      } else {
+        armSessionTimer(stored.savedAt);
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [armSessionTimer]);
 
   const signIn = useCallback(async (email: string, password: string, rememberMe: boolean) => {
     setError(null);
     try {
       const browser = typeof navigator !== 'undefined' ? navigator.userAgent : '';
       const { token, user: resolvedUser } = await apiLogin(email, password, browser);
+      rememberMeRef.current = rememberMe;
       setToken(token);
       setUser(resolvedUser);
       const savedAt = Date.now();

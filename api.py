@@ -22,7 +22,7 @@ from db_utils import ensure_sheets_exist_, read_sheet_as_objects_
 from auth import (
     ApiError, authenticate_, require_role_, login_with_password_,
     request_password_reset_, reset_password_with_token_, verify_session_token_,
-    find_user_by_email_, change_password_,
+    find_user_by_email_, change_password_, create_session_token_,
 )
 from audit_log import log_audit_, get_audit_logs_
 from branches import list_branches_, create_branch_, delete_branch_, reactivate_branch_
@@ -117,13 +117,21 @@ def do_post():
     except ApiError as err:
         return json_response_({'ok': False, 'error': err.code or 'AUTH_FAILED'})
 
+    # Sliding session: every authenticated call re-issues a fresh
+    # full-length token, so an actively-used session never hits the
+    # hard expiry - only a genuinely idle session (no calls at all
+    # for SESSION_TIMEOUT_MINUTES) does. The frontend picks this up
+    # from the response envelope's 'token' field and updates its
+    # stored session + auto-logout timer accordingly.
+    refreshed_token = create_session_token_(user['email'])
+
     if action == 'auth.logout':
         log_audit_(user['email'], 'LOGOUT', 'User signed out', user['branch'], body.get('browser'))
         return json_response_({'ok': True, 'data': {'success': True}})
 
     try:
         result = route_action_(action, user, payload)
-        return json_response_({'ok': True, 'data': result})
+        return json_response_({'ok': True, 'data': result, 'token': refreshed_token})
     except ApiError as err:
         code = err.code if err.code in KNOWN_ERROR_CODES else 'SERVER_ERROR'
         if code == 'SERVER_ERROR':
@@ -146,14 +154,16 @@ def handle_login_(payload):
 
 
 def handle_who_am_i_(token):
-    """Verifies an existing session token to restore a session on page load."""
+    """Verifies an existing session token to restore a session on page load.
+    Also refreshes the token (sliding session), since reopening the app
+    counts as activity too."""
     email = verify_session_token_(token)
     if not email:
         return json_response_({'ok': False, 'error': 'AUTH_INVALID_TOKEN'})
     user = find_user_by_email_(email)
     if not user:
         return json_response_({'ok': False, 'error': 'AUTH_NOT_REGISTERED'})
-    return json_response_({'ok': True, 'data': user})
+    return json_response_({'ok': True, 'data': user, 'token': create_session_token_(email)})
 
 
 def route_action_(action, user, payload):

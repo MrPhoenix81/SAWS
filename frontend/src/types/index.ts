@@ -285,6 +285,10 @@ export interface ApiEnvelope<T> {
   data?: T;
   error?: string;
   message?: string;
+  /** Sliding session: a fresh token re-issued on this call, present on
+   * every successful authenticated response. See AuthContext, which
+   * picks this up to keep an actively-used session from expiring. */
+  token?: string;
 }
 
 export type InactiveStatus =

@@ -111,12 +111,25 @@ def get_dashboard_data_(user, params=None):
         # and its active rows are grouped by status label with no workflow
         # prefix (the surrounding chart already says which workflow it is).
         # Sorted highest -> lowest so the frontend can shade bars by rank.
+        def short_status_label(workflow_name, status):
+            """STATUS_LABELS for Inactive/Transfer statuses already bake
+            in the workflow name (e.g. 'Inactive - Pending Head Office')
+            since that same label is also used in places like the audit
+            log where the workflow isn't otherwise obvious. Here, the
+            chart itself is already titled with the workflow name, so
+            strip that redundant prefix for display."""
+            label = config.STATUS_LABELS.get(status, status)
+            prefix = f'{workflow_name} - '
+            if isinstance(label, str) and label.startswith(prefix):
+                return label[len(prefix):]
+            return label
+
         status_distribution = {}
         for name, (active, completed, approved_status) in workflow_rows.items():
             counts = defaultdict(int)
             counts['Approved'] = len(completed)
             for r in active:
-                counts[config.STATUS_LABELS.get(r.get('Status'), r.get('Status'))] += 1
+                counts[short_status_label(name, r.get('Status'))] += 1
             status_distribution[name] = sorted(
                 ({'status': k, 'count': v} for k, v in counts.items() if v > 0),
                 key=lambda item: item['count'],

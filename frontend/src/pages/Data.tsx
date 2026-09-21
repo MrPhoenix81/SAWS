@@ -485,7 +485,7 @@ function UploadSection({ branchNames }: { branchNames: string[] }) {
           throw new Error(err instanceof ApiError ? err.message || 'Upload failed.' : 'Upload failed. Please try again.');
         }
 
-        const message = `${res.inserted} of ${res.total} row(s) uploaded${res.skipped > 0 ? ` \u00b7 ${res.skipped} skipped` : ''}.`;
+        const message = `${res.inserted} of ${res.total} row(s) uploaded${res.updated > 0 ? ` \u00b7 ${res.updated} status updated` : ''}${res.skipped > 0 ? ` \u00b7 ${res.skipped} skipped` : ''}.`;
         const detail = <ImportResultDetail result={res} />;
         return { message, detail };
       }
@@ -577,14 +577,31 @@ function UploadSection({ branchNames }: { branchNames: string[] }) {
 /** Rendered inside the bottom-right progress tray once an upload finishes. */
 function ImportResultDetail({ result }: { result: BulkImportResult }) {
   const skippedRows = result.results.filter((r) => r.status === 'skipped');
+  const updatedRows = result.results.filter((r) => r.status === 'updated');
   const warnedRows = result.results.filter((r) => r.status === 'inserted' && r.warning);
 
-  if (skippedRows.length === 0 && warnedRows.length === 0) {
+  if (skippedRows.length === 0 && updatedRows.length === 0 && warnedRows.length === 0) {
     return <p className="text-xs text-ink-700/50">No issues - every row uploaded cleanly.</p>;
   }
 
   return (
     <div className="space-y-2">
+      {updatedRows.length > 0 && (
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-wide text-ink-700/50 mb-1">Status updated</p>
+          <ul className="text-xs space-y-1">
+            {updatedRows.map((r) => (
+              <li key={r.row} className="flex items-start gap-1.5 text-approve">
+                <CheckCircle2 size={12} className="mt-0.5 shrink-0" />
+                <span>
+                  Row {r.row} ({r.mid}): {r.reason}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {skippedRows.length > 0 && (
         <div>
           <p className="text-[11px] font-medium uppercase tracking-wide text-ink-700/50 mb-1">Skipped rows</p>

@@ -590,13 +590,14 @@ export async function bulkExport(workflow: BulkWorkflow, sheet: BulkSheet, branc
 export interface BulkImportRowResult {
   row: number;
   mid: string;
-  status: 'inserted' | 'skipped';
+  status: 'inserted' | 'updated' | 'skipped';
   reason?: string;
   warning?: string | null;
 }
 export interface BulkImportResult {
   total: number;
   inserted: number;
+  updated: number;
   skipped: number;
   results: BulkImportRowResult[];
 }

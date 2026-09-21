@@ -19,8 +19,8 @@ import config
 import storage
 from db_utils import (
     read_sheet_as_objects_, append_row_, delete_row_, invalidate_cache_,
-    now_iso_, format_date_only_, mid_exists_anywhere_, validate_phone_numbers_,
-    collect_screenshot_keys_,
+    now_iso_, format_date_only_, mid_exists_anywhere_, find_row_by_mid_,
+    update_row_fields_, validate_phone_numbers_, collect_screenshot_keys_,
 )
 from auth import ApiError, require_role_
 from audit_log import log_audit_
@@ -127,11 +127,15 @@ def bulk_export_(user, payload):
 # Import (upload)
 # ---------------------------------------------------------------
 
-def _normalize_row_(spec, raw_row, sheet_key, next_sl_no):
+def _normalize_row_(spec, raw_row, sheet_key, next_sl_no, check_mid_exists=True):
     """Builds one full row dict (every column in spec['columns'],
     nothing else) from a raw uploaded row, applying the same light
     defaults/formatting the rest of the app uses. Raises ValueError
-    with a short human reason if the row can't be used."""
+    with a short human reason if the row can't be used.
+
+    check_mid_exists=False skips the "MID already exists" hard-fail so
+    the caller can decide what to do with an existing MID itself (e.g.
+    update its status instead of rejecting the row)."""
     row = {}
     for col in spec['columns']:
         row[col] = raw_row.get(col, '')
@@ -150,7 +154,7 @@ def _normalize_row_(spec, raw_row, sheet_key, next_sl_no):
     )
     row['Phone Number 1'], row['Phone Number 2'], row['Phone Number 3'] = phone1, phone2, phone3
 
-    if mid_exists_anywhere_(row['MID']):
+    if check_mid_exists and mid_exists_anywhere_(row['MID']):
         raise ValueError(f"MID {row['MID']} already exists")
 
     for field in DATE_ONLY_FIELDS:
@@ -218,6 +222,7 @@ def bulk_import_(user, payload):
 
     results = []
     inserted = 0
+    updated = 0
     touched_branches = set()
 
     for idx, raw_row in enumerate(raw_rows):
@@ -226,10 +231,34 @@ def bulk_import_(user, payload):
             continue  # silently skip fully blank rows (common at the end of a spreadsheet)
         mid_for_report = str(raw_row.get('MID') or '').strip() or '(no MID)'
         try:
-            row = _normalize_row_(spec, raw_row, sheet_key, next_sl_no)
+            # check_mid_exists=False: an existing MID is not an automatic
+            # failure here anymore - if it's found, we decide below
+            # whether to update its status or skip it as a true duplicate.
+            row = _normalize_row_(spec, raw_row, sheet_key, next_sl_no, check_mid_exists=False)
             if row['MID'] in seen_mids_this_batch:
                 raise ValueError(f"MID {row['MID']} is duplicated earlier in this same file")
             seen_mids_this_batch.add(row['MID'])
+
+            existing = find_row_by_mid_(row['MID'])
+            if existing is not None:
+                existing_sheet, existing_row = existing
+                existing_status = str(existing_row.get('Status') or '').strip()
+                uploaded_status = str(row.get('Status') or '').strip()
+                if existing_status == uploaded_status:
+                    results.append({
+                        'row': row_num, 'mid': row['MID'], 'status': 'skipped',
+                        'reason': f"MID {row['MID']} already exists with the same status ({existing_status or 'blank'})"
+                    })
+                else:
+                    update_row_fields_(existing_sheet, existing_row['__row'], {'Status': uploaded_status})
+                    updated += 1
+                    touched_branches.add(existing_row.get('Branch') or row['Branch'])
+                    results.append({
+                        'row': row_num, 'mid': row['MID'], 'status': 'updated',
+                        'reason': f"status changed from '{existing_status or 'blank'}' to '{uploaded_status or 'blank'}'"
+                    })
+                continue
+
             warning = None
             if row['Branch'] not in known_branches:
                 warning = f"branch '{row['Branch']}' is not in your Branches list yet"
@@ -243,7 +272,8 @@ def bulk_import_(user, payload):
 
     log_audit_(
         user['email'], 'BULK_IMPORT',
-        f"Bulk imported {inserted} of {len(raw_rows)} row(s) into {sheet_name} ({spec['label']})",
+        f"Bulk imported {inserted} inserted, {updated} status-updated of {len(raw_rows)} row(s) "
+        f"into {sheet_name} ({spec['label']})",
         'ALL', payload.get('browser'),
     )
     invalidate_cache_(['dashboard_ALL'] + [f'dashboard_{b}' for b in touched_branches])
@@ -251,7 +281,8 @@ def bulk_import_(user, payload):
     return {
         'total': len(raw_rows),
         'inserted': inserted,
-        'skipped': len(raw_rows) - inserted,
+        'updated': updated,
+        'skipped': len(raw_rows) - inserted - updated,
         'results': results,
     }
 

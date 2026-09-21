@@ -385,6 +385,28 @@ def mid_exists_anywhere_(mid, exclude_sheet=None, exclude_row=None):
     return False
 
 
+def find_row_by_mid_(mid, exclude_sheet=None, exclude_row=None):
+    """Looks up MID across every SDMS workflow sheet (mirrors the sheet
+    list used by mid_exists_anywhere_) and returns (sheet_name, row)
+    for the first match, or None if the MID isn't found anywhere.
+    row is the full row dict, including '__row' (the DB row id)."""
+    value = str(mid or '').strip()
+    if not value:
+        return None
+    sheets = (
+        config.SHEET_RESPONSE, config.SHEET_COMPLETED,
+        config.SHEET_INACTIVE_RESPONSE, config.SHEET_INACTIVE_COMPLETED,
+        config.SHEET_TRANSFER_RESPONSE, config.SHEET_TRANSFER_COMPLETED,
+    )
+    for sheet_name in sheets:
+        for row in read_sheet_as_objects_(sheet_name):
+            if exclude_sheet == sheet_name and exclude_row is not None and row.get('__row') == exclude_row:
+                continue
+            if str(row.get('MID', '')).strip() == value:
+                return sheet_name, row
+    return None
+
+
 def append_row_(name, row_obj):
     """Appends one row (dict keyed by field name) to a sheet. Returns
     the number of rows now in that sheet (kept for interface parity

@@ -241,11 +241,11 @@ export default function Overview() {
   }
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+    <div className="flex-1 min-h-0 flex flex-col">
+      <div className="shrink-0 pb-4 border-b border-ink-100 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-display text-2xl">Welcome, {user?.name}</h2>
-          <p className="text-sm text-ink-700/60 mt-1">
+          <h2 className="font-display text-lg">Welcome, {user?.name}</h2>
+          <p className="text-xs text-ink-700/60 mt-0.5">
             {hasFullVisibility
               ? branchFilter
                 ? `Overview for ${branchFilter}.`
@@ -258,9 +258,9 @@ export default function Overview() {
         <div className="flex items-center gap-2">
           <button
             onClick={openFilters}
-            className="flex items-center gap-1.5 rounded-md border border-ink-200 px-4 py-2 text-sm text-ink-700/80 hover:bg-paper transition-colors"
+            className="flex items-center gap-1.5 rounded-md border border-ink-200 px-3 py-1.5 text-xs text-ink-700/80 hover:bg-paper transition-colors"
           >
-            <SlidersHorizontal size={15} />
+            <SlidersHorizontal size={13} />
             Filters
             {activeFilterCount > 0 && (
               <span className="ml-0.5 inline-flex items-center justify-center h-5 min-w-[20px] px-1 rounded-full bg-amber text-white text-xs font-medium">
@@ -280,8 +280,8 @@ export default function Overview() {
           )}
 
           <div className="relative">
-            <button onClick={() => setDownloadOpen(v => !v)} disabled={!data || downloading} className="flex items-center gap-1.5 rounded-md bg-ink-900 text-paper px-4 py-2 text-sm hover:bg-ink-700 transition-colors disabled:opacity-60">
-              <Download size={15} />{downloading ? 'Preparing…' : 'Download'}<ChevronDown size={14} className={downloadOpen ? 'rotate-180' : ''} />
+            <button onClick={() => setDownloadOpen(v => !v)} disabled={!data || downloading} className="flex items-center gap-1.5 rounded-md bg-ink-900 text-paper px-3 py-1.5 text-xs hover:bg-ink-700 transition-colors disabled:opacity-60">
+              <Download size={13} />{downloading ? 'Preparing…' : 'Download'}<ChevronDown size={12} className={downloadOpen ? 'rotate-180' : ''} />
             </button>
             {downloadOpen && <div className="absolute right-0 mt-2 w-52 rounded-md border border-ink-100 bg-white shadow-panel py-1.5 z-30">
               <button onClick={() => handleDownload('csv')} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-paper"><FileText size={15}/>CSV (.csv)</button>
@@ -378,13 +378,14 @@ export default function Overview() {
         </div>
       </div>
 
-      {isLoading && <p className="text-sm text-ink-700/60">Loading dashboard…</p>}
-      {isError && (
-        <p className="text-sm text-reject">Couldn&rsquo;t load dashboard data. Please refresh.</p>
-      )}
+      <div className="flex-1 min-h-0 overflow-y-auto pt-6 space-y-8">
+        {isLoading && <p className="text-sm text-ink-700/60">Loading dashboard…</p>}
+        {isError && (
+          <p className="text-sm text-reject">Couldn&rsquo;t load dashboard data. Please refresh.</p>
+        )}
 
-      {data && (
-        <>
+        {data && (
+          <>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             {CARD_DEFS.map(({ key, label, accent, tint, icon: Icon }) => (
               <div
@@ -571,7 +572,8 @@ export default function Overview() {
             )}
           </div>
         </>
-      )}
+        )}
+      </div>
     </div>
   );
 }

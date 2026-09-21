@@ -4,14 +4,22 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, X, Check, XCircle, Pencil, Trash2, ChevronLeft, ChevronRight, Loader2, Download, FileText, FileSpreadsheet, FileDown, Copy, CheckCheck, ChevronDown, ImageIcon } from 'lucide-react';
 import { listTransfer, scmCorrectTransfer, headOfficeUpdateTransfer, headOfficeApproveTransfer, headOfficeRejectTransfer, approveTransfer, rejectTransfer, deleteTransfer, getTransferScreenshotUrl, markPageSeen, listBranches, ApiError } from '@/lib/apiClient';
 import { useAuth } from '@/context/AuthContext';
+import {
+  ALL_ROWS_PAGE_SIZE,
+  BranchFilter,
+  DownloadMenu,
+  ListFooter,
+  SortableTh,
+  STICKY_HEAD_CLASS,
+  nextSortState,
+  type PageSizeOption
+} from '@/components/ListControls';
 import type { TransferEntry, TransferStatus } from '@/types';
 import { TRANSFER_STATUS_LABELS } from '@/types';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-const PAGE_SIZE_OPTIONS = [15,25,50,100] as const;
-type PageSize = typeof PAGE_SIZE_OPTIONS[number];
 const STATUS_STYLES: Record<TransferStatus,string> = {
   TRANSFER_PENDING_HEAD_OFFICE:'bg-amber-light text-amber',
   TRANSFER_PENDING_ADMIN:'bg-amber-light text-amber',
@@ -280,7 +288,10 @@ export default function Transfer() {
   const {user}=useAuth(); const qc=useQueryClient(); const [sp,setSp]=useSearchParams();
   const [tab,setTab]=useState<'active'|'completed'>(sp.get('tab')==='completed'?'completed':'active');
   const [search,setSearch]=useState(sp.get('search')||''); const [branchFilter,setBranchFilter]=useState('');
-  const [page,setPage]=useState(1); const [pageSize,setPageSize]=useState<PageSize>(15);
+  const [page,setPage]=useState(1); const [pageSize,setPageSize]=useState<PageSizeOption>(15);
+  const effectivePageSize=pageSize==='all'?ALL_ROWS_PAGE_SIZE:pageSize;
+  const [sortBy,setSortBy]=useState(''); const [sortDir,setSortDir]=useState<'asc'|'desc'>('asc');
+  function toggleSort(field:string){const next=nextSortState(field,sortBy,sortDir);setSortBy(next.sortBy);setSortDir(next.sortDir);setPage(1);}
   const [editTarget,setEditTarget]=useState<TransferEntry|null>(null); const [form,setForm]=useState<Form>(emptyForm);
   const [rejectTarget,setRejectTarget]=useState<TransferEntry|null>(null); const [rejectReason,setRejectReason]=useState('');
   const [deleteTarget,setDeleteTarget]=useState<TransferEntry|null>(null); const [deleteConfirmText,setDeleteConfirmText]=useState(''); const [selectedTransfer,setSelectedTransfer]=useState<TransferEntry|null>(null); const [error,setError]=useState<string|null>(null); const [exporting,setExporting]=useState(false);
@@ -288,7 +299,7 @@ export default function Transfer() {
   React.useEffect(()=>{const t=sp.get('tab')==='completed'?'completed':'active';if(t!==tab){setTab(t);setPage(1)} const q=sp.get('search')||'';if(q!==search){setSearch(q);setPage(1)}},[sp]); // eslint-disable-line react-hooks/exhaustive-deps
   // Item 7: opening Transfer clears its sidebar "unseen" badge.
   React.useEffect(()=>{markPageSeen('transfer').then(()=>qc.invalidateQueries({queryKey:['activeCounts']})).catch(()=>{})},[]); // eslint-disable-line react-hooks/exhaustive-deps
-  const params=useMemo(()=>({search:search.trim()||undefined,branch:branchFilter||undefined,page,pageSize}),[search,branchFilter,page,pageSize]);
+  const params=useMemo(()=>({search:search.trim()||undefined,branch:branchFilter||undefined,sortBy:sortBy||undefined,sortDir:sortBy?sortDir:undefined,page,pageSize:effectivePageSize}),[search,branchFilter,sortBy,sortDir,page,effectivePageSize]);
   const showBranch=user?.role==='Head Office'; // Head Office sees every branch, so show which one each row belongs to
   const branchesQuery=useQuery({queryKey:['branches'],queryFn:listBranches,enabled:user?.role==='Admin'||user?.role==='Head Office'});
   const query=useQuery({queryKey:['transfer',tab,params],queryFn:()=>listTransfer(tab==='completed'?'completed':'response',params),enabled:!!user});
@@ -304,7 +315,7 @@ export default function Transfer() {
   const correction=useMutation({mutationFn:()=>scmCorrectTransfer(editTarget!.MID,{'MID':form.mid,'Student Name':form.studentName,'Phone Number 1':form.phone1,'Phone Number 2':form.phone2,'Phone Number 3':form.phone3,'Transfer To Branch':form.transferToBranch,Reason:form.reason}),onSuccess:()=>{setEditTarget(null);setForm(emptyForm);refresh()},onError:e=>setError(errorText(e,'Could not resubmit the correction.'))});
   const del=useMutation({mutationFn:()=>deleteTransfer(deleteTarget!.MID,tab==='completed'?'completed':'response',deleteConfirmText.trim()),onSuccess:()=>{setDeleteTarget(null);setDeleteConfirmText('');refresh()},onError:e=>setError(errorText(e,'Could not delete the transfer.'))});
 
-  const rows=query.data?.rows||[]; const total=query.data?.total||0; const pages=Math.max(1,Math.ceil(total/pageSize));
+  const rows=query.data?.rows||[]; const total=query.data?.total||0; const pages=Math.max(1,Math.ceil(total/effectivePageSize));
   const canExport=user?.role==='Admin'||user?.role==='Head Office';
 
   async function exportData(format:'csv'|'xlsx'|'pdf') {
@@ -324,74 +335,162 @@ export default function Transfer() {
   function openEdit(r:TransferEntry){setEditTarget(r);setForm(toForm(r));}
   function updateUrl(next:'active'|'completed'){setTab(next);setPage(1);const n=new URLSearchParams(sp);if(next==='completed')n.set('tab','completed');else n.delete('tab');setSp(n,{replace:true});}
 
-  return <div className="flex-1 min-h-0 flex flex-col gap-5">
-    <div className="shrink-0 flex flex-col md:flex-row md:items-end justify-between gap-4">
-      <div><h2 className="font-display text-2xl">Transfer Students</h2><p className="text-sm text-ink-700/60 mt-1">SCM submits transfer requests for Head Office and Admin approval.</p></div>
-      {canExport && <div className="flex gap-2">
-        <button disabled={exporting} onClick={()=>exportData('csv')} className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 px-3 py-2 text-sm hover:bg-paper disabled:opacity-50"><FileText size={15}/>CSV</button>
-        <button disabled={exporting} onClick={()=>exportData('xlsx')} className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 px-3 py-2 text-sm hover:bg-paper disabled:opacity-50"><FileSpreadsheet size={15}/>Excel</button>
-        <button disabled={exporting} onClick={()=>exportData('pdf')} className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 px-3 py-2 text-sm hover:bg-paper disabled:opacity-50"><FileDown size={15}/>PDF</button>
-      </div>}
-    </div>
-    <div className="flex-1 min-h-0 flex flex-col rounded-lg border border-ink-100 bg-white shadow-panel overflow-hidden">
-      <div className="shrink-0 p-4 border-b border-ink-100 flex flex-col lg:flex-row gap-3">
-        <div className="relative flex-1"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-700/40"/><input value={search} onChange={e=>{setSearch(e.target.value);setPage(1)}} placeholder="Search MID, name or phone..." className="w-full pl-9 pr-3 py-2 rounded-md border border-ink-100 text-sm"/></div>
-        {(user?.role==='Admin'||user?.role==='Head Office') && <select value={branchFilter} onChange={e=>{setBranchFilter(e.target.value);setPage(1)}} className="rounded-md border border-ink-100 px-3 py-2 text-sm"><option value="">All branches</option>{(branchesQuery.data||[]).map(b=><option key={b} value={b}>{b}</option>)}</select>}
+  return <div className="flex-1 min-h-0 flex flex-col gap-6">
+    <div className="shrink-0 flex flex-wrap items-end justify-between gap-4">
+      <div>
+        <h2 className="font-display text-2xl">{tab==='completed' ? 'Approved' : 'Transfer'}</h2>
+        <p className="text-sm text-ink-700/60 mt-1">{canExport ? 'Every branch.' : `${user?.branch} branch.`}</p>
       </div>
-      {error && <div className="m-4 rounded-md bg-reject-light text-reject text-sm px-3 py-2">{error}</div>}
-      {query.isLoading ? <div className="p-10 text-center text-sm text-ink-700/60"><Loader2 className="animate-spin inline mr-2" size={16}/>Loading...</div> :
-      rows.length===0 ? <div className="p-10 text-center text-sm text-ink-700/60">No transfer records found.</div> :
-      (() => {
-        // Split into a "Needs Your Attention" table (rows actually
-        // awaiting THIS user's action) plus the regular table with
-        // everything else. Only relevant on the active tab - once
-        // nothing is left awaiting this user, only the single full
-        // table remains.
-        const attentionRows = tab==='active' ? rows.filter(r=>r['Awaiting My Action']) : [];
-        const hasAttention = attentionRows.length>0;
-        const mainRows = hasAttention ? rows.filter(r=>!r['Awaiting My Action']) : rows;
+      <div className="flex items-center gap-2">
+        {canExport && <DownloadMenu exporting={exporting} onExport={exportData} />}
+      </div>
+    </div>
 
-        const renderTransferRows = (list: TransferEntry[], emptyMessage: string) => (
-          <tbody className="divide-y divide-ink-100">
-            {list.length===0 && <tr><td colSpan={showBranch?7:6} className="px-4 py-8 text-center text-ink-700/50 text-sm">{emptyMessage}</td></tr>}
-            {list.map((r,i)=>
-              <tr key={`${r.MID}-${r['Sl No']}`} onClick={()=>setSelectedTransfer(r)} className="hover:bg-paper/50 cursor-pointer">
-                <td className="px-4 py-3 text-ink-700/50">{(page-1)*pageSize+i+1}</td>
-                <td className="px-4 py-3 font-medium">{r.MID}</td>
+    {error && (
+      <div className="rounded-md border border-reject/20 bg-reject-light px-4 py-3 text-sm text-reject flex items-center justify-between">
+        <span>{error}</span>
+        <button onClick={()=>setError(null)}><X size={16} /></button>
+      </div>
+    )}
+
+    <div className="shrink-0 flex flex-wrap items-center gap-3">
+      <div className="relative w-72">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-700/40" />
+        <input
+          value={search}
+          onChange={(e)=>{setSearch(e.target.value);setPage(1)}}
+          placeholder="Search by name, MID, or phone number"
+          className="w-full rounded-md border border-ink-200 pl-8 pr-2 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-ink-900"
+        />
+      </div>
+
+      {canExport && (
+        <BranchFilter
+          value={branchFilter}
+          onChange={(b)=>{setBranchFilter(b);setPage(1)}}
+          branches={branchesQuery.data||[]}
+        />
+      )}
+
+      {(search || branchFilter) && (
+        <button
+          onClick={()=>{setSearch('');setBranchFilter('');setPage(1);const n=new URLSearchParams(sp);n.delete('search');setSp(n,{replace:true})}}
+          className="flex items-center gap-1 text-sm text-ink-700/50 hover:text-ink-700 transition-colors px-1"
+        >
+          <X size={13} />
+          Clear filters
+        </button>
+      )}
+    </div>
+
+    {query.isLoading && <p className="text-sm text-ink-700/60 px-1">Loading&hellip;</p>}
+    {query.isError && <p className="text-sm text-reject px-1">Couldn&rsquo;t load the list. Please refresh.</p>}
+
+    {query.data && (() => {
+      // Split into a "Needs Your Attention" table (rows actually awaiting
+      // THIS user's action) plus the regular table with everything else.
+      // Only relevant on the Active tab - the Approved tab is finished
+      // work, so it only ever has the single table.
+      const attentionRows = tab==='active' ? rows.filter(r=>r['Awaiting My Action']) : [];
+      const hasAttention = attentionRows.length>0;
+      const mainRows = hasAttention ? rows.filter(r=>!r['Awaiting My Action']) : rows;
+
+      const renderHead = () => (
+        <thead className={STICKY_HEAD_CLASS}>
+          <tr className="text-left text-xs uppercase tracking-wide text-ink-700/50">
+            <th className="px-4 py-3 font-medium">#</th>
+            <SortableTh label="MID" sortKey="MID" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+            <SortableTh label="Student" sortKey="Student Name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+            {showBranch && <SortableTh label="Branch" sortKey="Branch" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />}
+            <th className="px-4 py-3 font-medium">Phone numbers</th>
+            <SortableTh label="Status" sortKey="Status" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+            <th className="px-4 py-3 font-medium">Reason</th>
+            <th className="px-4 py-3 font-medium text-right">Actions</th>
+          </tr>
+        </thead>
+      );
+
+      const renderRows = (list: TransferEntry[], emptyMessage: string) => (
+        <tbody>
+          {list.map((r,i)=>{
+            const awaitingMyAction = canExport && !!r['Awaiting My Action'];
+            const phones = [r['Phone Number 1'],r['Phone Number 2'],r['Phone Number 3']].filter(Boolean) as string[];
+            return (
+              <tr
+                key={`${r.MID}-${r['Sl No']}`}
+                onClick={()=>setSelectedTransfer(r)}
+                className={`border-b border-ink-100 align-top cursor-pointer hover:bg-paper/60 ${awaitingMyAction ? 'bg-amber-light/40 border-l-2 border-l-amber' : ''}`}
+              >
+                <td className="px-4 py-3 text-ink-700/50">{(page-1)*effectivePageSize+i+1}</td>
+                <td className="px-4 py-3 font-mono text-xs">{r.MID}</td>
                 <td className="px-4 py-3 font-medium">{r['Student Name']}</td>
                 {showBranch && <td className="px-4 py-3 text-ink-700/70">{r.Branch||'—'}</td>}
-                <td className="px-4 py-3 text-ink-700/70">{[r['Phone Number 1'],r['Phone Number 2'],r['Phone Number 3']].filter(Boolean).map((p,j)=><div key={j} className="font-mono text-xs">{p}</div>)}</td>
-                <td className="px-4 py-3"><span className={`inline-flex rounded-full px-2 py-1 text-xs ${STATUS_STYLES[r.Status]}`}>{TRANSFER_STATUS_LABELS[r.Status]||r.Status}</span></td>
-                <td className="px-4 py-3 max-w-sm">
+                <td className="px-4 py-3 text-ink-700/70">
+                  {phones.length
+                    ? phones.map((p,j)=><div key={j} className="font-mono text-xs">{p}</div>)
+                    : <span className="text-ink-700/30 italic">—</span>}
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs ${STATUS_STYLES[r.Status]}`}>{TRANSFER_STATUS_LABELS[r.Status]||r.Status}</span>
+                  {awaitingMyAction && (
+                    <span className="ml-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium bg-amber text-white align-middle">
+                      Needs your decision
+                    </span>
+                  )}
+                </td>
+                <td className="px-4 py-3 text-ink-700/70 max-w-xs">
                   <div className="flex items-center gap-1.5">
                     <div className="truncate text-xs">{r.Reason||'Not yet provided'}</div>
                     {(user?.role==='Admin'||user?.role==='Head Office') && r['Screenshot Uploaded'] &&
                       <span onClick={(e)=>e.stopPropagation()}><ViewAttachmentButtonIcon mid={r.MID} sheet={tab==='completed'?'completed':'response'}/></span>}
                   </div>
                 </td>
+                <td className="px-4 py-3 text-right text-ink-700/40">→</td>
               </tr>
-            )}
-          </tbody>
-        );
+            );
+          })}
+          {list.length===0 && (
+            <tr>
+              <td colSpan={8} className="px-5 py-8 text-center text-ink-700/50 text-sm">{emptyMessage}</td>
+            </tr>
+          )}
+        </tbody>
+      );
 
-        const tableHead = (
-          <thead className="[&_th]:sticky [&_th]:top-0 [&_th]:z-[1] [&_th]:bg-paper [&_th]:[box-shadow:inset_0_-1px_0_theme(colors.ink.100)] text-xs text-ink-700/60"><tr>
-            <th className="text-left px-4 py-3">#</th><th className="text-left px-4 py-3">MID</th><th className="text-left px-4 py-3">Student</th>{showBranch && <th className="text-left px-4 py-3">Branch</th>}<th className="text-left px-4 py-3">Phone numbers</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Reason</th>
-          </tr></thead>
-        );
+      return (
+        <div className="flex-1 min-h-0 overflow-auto space-y-6">
+          {hasAttention && (
+            <div className="bg-white rounded-lg border-2 border-amber shadow-panel overflow-clip min-w-fit">
+              <div className="px-4 py-2.5 bg-amber-light border-b border-amber/30">
+                <h3 className="text-sm font-semibold text-amber">Needs Your Attention ({attentionRows.length})</h3>
+              </div>
+              <table className="w-full text-sm min-w-[900px]">
+                {renderHead()}
+                {renderRows(attentionRows,'Nothing here.')}
+              </table>
+            </div>
+          )}
 
-        return <>
-          <div className="flex-1 min-h-0 overflow-auto">
-          {hasAttention && <div className="m-4 rounded-lg border-2 border-amber overflow-clip min-w-fit">
-            <div className="px-4 py-2.5 bg-amber-light border-b border-amber/30"><h3 className="text-sm font-semibold text-amber">Needs Your Attention ({attentionRows.length})</h3></div>
-            <div><table className="w-full text-sm">{tableHead}{renderTransferRows(attentionRows,'Nothing here.')}</table></div>
-          </div>}
-          <div className="min-w-fit"><table className="w-full text-sm">{tableHead}{renderTransferRows(mainRows,'No transfer records found.')}</table></div>
+          <div className="bg-white rounded-lg border border-ink-100 shadow-panel overflow-clip min-w-fit">
+            <table className="w-full text-sm min-w-[900px]">
+              {renderHead()}
+              {renderRows(mainRows,'No entries match this search.')}
+            </table>
           </div>
-          <div className="shrink-0 flex items-center justify-between px-4 py-3 border-t border-ink-100 text-xs text-ink-700/60"><span>{total} record(s)</span><div className="flex items-center gap-2"><select value={pageSize} onChange={e=>{setPageSize(Number(e.target.value) as PageSize);setPage(1)}} className="border border-ink-100 rounded px-2 py-1"><option value={15}>15</option><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select><button disabled={page<=1} onClick={()=>setPage(p=>p-1)}><ChevronLeft size={16}/></button><span>{page}/{pages}</span><button disabled={page>=pages} onClick={()=>setPage(p=>p+1)}><ChevronRight size={16}/></button></div></div>
-        </>;
-      })()}
-    </div>
+        </div>
+      );
+    })()}
+
+    {query.data && (
+      <ListFooter
+        page={page}
+        totalPages={pages}
+        total={total}
+        pageSize={pageSize}
+        onPageSizeChange={(size)=>{setPageSize(size);setPage(1)}}
+        onPageChange={setPage}
+      />
+    )}
 
     {selectedTransfer && <TransferDetailsModal
       row={selectedTransfer}

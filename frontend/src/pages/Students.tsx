@@ -22,7 +22,6 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
-  SlidersHorizontal,
   Image as ImageIcon,
   Loader2
 } from 'lucide-react';
@@ -49,6 +48,7 @@ import {
   ApiError
 } from '@/lib/apiClient';
 import { useAuth } from '@/context/AuthContext';
+import { BranchFilter } from '@/components/ListControls';
 import type { StudentEntry, StudentStatus } from '@/types';
 import { STATUS_LABELS } from '@/types';
 
@@ -179,62 +179,7 @@ export default function Students() {
     searchParams.get('tab') === 'completed' ? 'completed' : 'response'
   );
   const [search, setSearch] = useState(searchParams.get('search') || '');
-  const [statusFilter, setStatusFilter] = useState<string>('');
   const [branchFilter, setBranchFilter] = useState<string>('');
-  const [lastPresentFrom, setLastPresentFrom] = useState<string>('');
-  const [lastPresentTo, setLastPresentTo] = useState<string>('');
-  const [entryDateFrom, setEntryDateFrom] = useState<string>('');
-  const [entryDateTo, setEntryDateTo] = useState<string>('');
-
-  // The Filters panel edits these "draft" copies and only commits them to the
-  // real filter state (which actually re-queries) when "Apply filters" is
-  // clicked - so opening the panel and closing it without applying is a no-op.
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [draftStatus, setDraftStatus] = useState('');
-  const [draftBranch, setDraftBranch] = useState('');
-  const [draftEntryDateFrom, setDraftEntryDateFrom] = useState('');
-  const [draftEntryDateTo, setDraftEntryDateTo] = useState('');
-  const [draftLastPresentFrom, setDraftLastPresentFrom] = useState('');
-  const [draftLastPresentTo, setDraftLastPresentTo] = useState('');
-
-  function openFilters() {
-    setDraftStatus(statusFilter);
-    setDraftBranch(branchFilter);
-    setDraftEntryDateFrom(entryDateFrom);
-    setDraftEntryDateTo(entryDateTo);
-    setDraftLastPresentFrom(lastPresentFrom);
-    setDraftLastPresentTo(lastPresentTo);
-    setFiltersOpen(true);
-  }
-
-  function applyFilters() {
-    setStatusFilter(draftStatus);
-    setBranchFilter(draftBranch);
-    setEntryDateFrom(draftEntryDateFrom);
-    setEntryDateTo(draftEntryDateTo);
-    setLastPresentFrom(draftLastPresentFrom);
-    setLastPresentTo(draftLastPresentTo);
-    setPage(1);
-    setFiltersOpen(false);
-  }
-
-  function clearDraftFilters() {
-    setDraftStatus('');
-    setDraftBranch('');
-    setDraftEntryDateFrom('');
-    setDraftEntryDateTo('');
-    setDraftLastPresentFrom('');
-    setDraftLastPresentTo('');
-  }
-
-  const activeFilterCount = [
-    statusFilter,
-    branchFilter,
-    entryDateFrom,
-    entryDateTo,
-    lastPresentFrom,
-    lastPresentTo
-  ].filter(Boolean).length;
 
   const [sortBy, setSortBy] = useState<string>('');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -333,14 +278,7 @@ export default function Students() {
       // all phone numbers server-side (OR, not AND). See note in apiClient.ts -
       // students.list on the backend needs to do the same OR-style match.
       search: search || undefined,
-      status: statusFilter || undefined,
       branch: branchFilter || undefined,
-      // Two distinct date ranges - when the entry was created vs. when
-      // the student was last actually present. See StudentListParams.
-      entryDateFrom: entryDateFrom || undefined,
-      entryDateTo: entryDateTo || undefined,
-      lastPresentFrom: lastPresentFrom || undefined,
-      lastPresentTo: lastPresentTo || undefined,
       sortBy: sortBy || undefined,
       sortDir: sortBy ? sortDir : undefined,
       page,
@@ -348,12 +286,7 @@ export default function Students() {
     }),
     [
       search,
-      statusFilter,
       branchFilter,
-      entryDateFrom,
-      entryDateTo,
-      lastPresentFrom,
-      lastPresentTo,
       sortBy,
       sortDir,
       page,
@@ -417,12 +350,7 @@ export default function Students() {
     try {
       const result = await exportStudents(tab, {
         search: search || undefined,
-        status: statusFilter || undefined,
         branch: branchFilter || undefined,
-        entryDateFrom: entryDateFrom || undefined,
-        entryDateTo: entryDateTo || undefined,
-        lastPresentFrom: lastPresentFrom || undefined,
-        lastPresentTo: lastPresentTo || undefined,
         sortBy: sortBy || undefined,
         sortDir: sortBy ? sortDir : undefined,
         page: 1,
@@ -475,8 +403,7 @@ export default function Students() {
             {exportMenuOpen && (
               <div className="absolute right-0 mt-2 w-72 rounded-md border border-ink-100 bg-white shadow-panel py-1.5 z-10">
                 <p className="px-3 pt-1 pb-2 text-xs text-ink-700/50 border-b border-ink-100 mb-1">
-                  Downloads every row matching your current search, status, branch
-                  {(entryDateFrom || entryDateTo || lastPresentFrom || lastPresentTo) && ', and date'} filters
+                  Downloads every row matching your current search and branch filter
                   {hasFullVisibility && branchFilter ? ` (${branchFilter})` : ''}.
                 </p>
                 <button
@@ -531,29 +458,22 @@ export default function Students() {
           />
         </div>
 
-        <button
-          onClick={openFilters}
-          className="flex items-center gap-1.5 rounded-md border border-ink-200 px-4 py-2 text-sm text-ink-700/80 hover:bg-paper transition-colors"
-        >
-          <SlidersHorizontal size={15} />
-          Filters
-          {activeFilterCount > 0 && (
-            <span className="ml-0.5 inline-flex items-center justify-center h-5 min-w-[20px] px-1 rounded-full bg-amber text-white text-xs font-medium">
-              {activeFilterCount}
-            </span>
-          )}
-        </button>
+        {hasFullVisibility && (
+          <BranchFilter
+            value={branchFilter}
+            onChange={(b) => {
+              setBranchFilter(b);
+              setPage(1);
+            }}
+            branches={branchesQuery.data || []}
+          />
+        )}
 
-        {(search || activeFilterCount > 0) && (
+        {(search || branchFilter) && (
           <button
             onClick={() => {
               setSearch('');
-              setStatusFilter('');
               setBranchFilter('');
-              setEntryDateFrom('');
-              setEntryDateTo('');
-              setLastPresentFrom('');
-              setLastPresentTo('');
               setPage(1);
             }}
             className="flex items-center gap-1 text-sm text-ink-700/50 hover:text-ink-700 transition-colors px-1"
@@ -562,129 +482,6 @@ export default function Students() {
             Clear filters
           </button>
         )}
-      </div>
-
-      {/* Filters slide-over panel */}
-      <div className={`fixed inset-0 z-40 ${filtersOpen ? '' : 'pointer-events-none'}`} aria-hidden={!filtersOpen}>
-        <div
-          onClick={() => setFiltersOpen(false)}
-          className={`absolute inset-0 bg-ink-950/40 transition-opacity duration-200 ${
-            filtersOpen ? 'opacity-100' : 'opacity-0'
-          }`}
-        />
-        <div
-          className={`absolute right-0 top-0 h-full w-full max-w-sm bg-white shadow-panel flex flex-col transition-transform duration-300 ${
-            filtersOpen ? 'translate-x-0' : 'translate-x-full'
-          }`}
-        >
-          <div className="flex items-start justify-between px-5 py-4 border-b border-ink-100">
-            <div>
-              <h3 className="font-display text-lg">Filters</h3>
-              <p className="text-xs text-ink-700/60 mt-0.5">
-                Narrow the student list by status, branch, and dates.
-              </p>
-            </div>
-            <button
-              onClick={() => setFiltersOpen(false)}
-              className="text-ink-700/50 hover:text-ink-900 transition-colors"
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-            <div>
-              <label className="block text-xs font-medium text-ink-700/70 mb-1.5">Status</label>
-              <select
-                value={draftStatus}
-                onChange={(e) => setDraftStatus(e.target.value)}
-                className="w-full rounded-md border border-ink-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-ink-900"
-              >
-                <option value="">All statuses</option>
-                {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {hasFullVisibility && (
-              <div>
-                <label className="block text-xs font-medium text-ink-700/70 mb-1.5">Branch</label>
-                <select
-                  value={draftBranch}
-                  onChange={(e) => setDraftBranch(e.target.value)}
-                  className="w-full rounded-md border border-ink-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-ink-900"
-                >
-                  <option value="">All branches</option>
-                  {(branchesQuery.data || []).map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div>
-              <label className="block text-xs font-medium text-ink-700/70 mb-1.5">Entry date</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={draftEntryDateFrom}
-                  max={draftEntryDateTo || undefined}
-                  onChange={(e) => setDraftEntryDateFrom(e.target.value)}
-                  className="w-full rounded-md border border-ink-200 px-2.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-ink-900"
-                />
-                <span className="text-xs text-ink-700/40 shrink-0">to</span>
-                <input
-                  type="date"
-                  value={draftEntryDateTo}
-                  min={draftEntryDateFrom || undefined}
-                  onChange={(e) => setDraftEntryDateTo(e.target.value)}
-                  className="w-full rounded-md border border-ink-200 px-2.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-ink-900"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-ink-700/70 mb-1.5">Last present day</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={draftLastPresentFrom}
-                  max={draftLastPresentTo || undefined}
-                  onChange={(e) => setDraftLastPresentFrom(e.target.value)}
-                  className="w-full rounded-md border border-ink-200 px-2.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-ink-900"
-                />
-                <span className="text-xs text-ink-700/40 shrink-0">to</span>
-                <input
-                  type="date"
-                  value={draftLastPresentTo}
-                  min={draftLastPresentFrom || undefined}
-                  onChange={(e) => setDraftLastPresentTo(e.target.value)}
-                  className="w-full rounded-md border border-ink-200 px-2.5 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-ink-900"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 px-5 py-4 border-t border-ink-100">
-            <button
-              onClick={clearDraftFilters}
-              className="flex-1 rounded-md border border-ink-200 py-2.5 text-sm text-ink-700/80 hover:bg-paper transition-colors"
-            >
-              Clear all
-            </button>
-            <button
-              onClick={applyFilters}
-              className="flex-1 rounded-md bg-ink-900 text-paper py-2.5 text-sm hover:bg-ink-700 transition-colors"
-            >
-              Apply filters
-            </button>
-          </div>
-        </div>
       </div>
 
       {studentsQuery.isLoading && (

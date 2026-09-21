@@ -278,13 +278,19 @@ def list_inactive_(user, completed=False, params=None):
 
     rows.sort(key=lambda r: str(r.get('Entry Date') or ''), reverse=True)
 
+    # Column sort requested from the table header (MID, student name,
+    # branch or status). It replaces the default ordering below.
+    sort_by = params.get('sortBy')
+    if sort_by in ('MID', 'Student Name', 'Branch', 'Status'):
+        descending = str(params.get('sortDir') or 'asc').lower() == 'desc'
+        rows.sort(key=lambda r: str(r.get(sort_by) or '').lower(), reverse=descending)
     # Head Office: bubble requests sitting in its own queue to the top
     # (stable sort keeps the newest-first order inside each group).
-    if not completed and user['role'] == config.ROLE_HEAD_OFFICE:
+    elif not completed and user['role'] == config.ROLE_HEAD_OFFICE:
         rows.sort(key=lambda r: 0 if r.get('Status') == config.STATUS_INACTIVE_PENDING_HEAD_OFFICE else 1)
 
     page = max(int(params.get('page') or 1), 1)
-    page_size = max(min(int(params.get('pageSize') or 25), 200), 1)
+    page_size = max(min(int(params.get('pageSize') or 25), 9999), 1)
     start = (page - 1) * page_size
     page_rows = rows[start:start + page_size]
 

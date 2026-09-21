@@ -37,14 +37,21 @@ import {
   ApiError
 } from '@/lib/apiClient';
 import { useAuth } from '@/context/AuthContext';
+import {
+  ALL_ROWS_PAGE_SIZE,
+  BranchFilter,
+  DownloadMenu,
+  ListFooter,
+  SortableTh,
+  STICKY_HEAD_CLASS,
+  nextSortState,
+  type PageSizeOption
+} from '@/components/ListControls';
 import type { InactiveEntry, InactiveStatus } from '@/types';
 import { INACTIVE_STATUS_LABELS } from '@/types';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-
-const PAGE_SIZE_OPTIONS = [15, 25, 50, 100] as const;
-type PageSize = typeof PAGE_SIZE_OPTIONS[number];
 
 const STATUS_STYLES: Record<InactiveStatus, string> = {
   INACTIVE_PENDING_HEAD_OFFICE: 'bg-amber-light text-amber',
@@ -475,7 +482,17 @@ export default function Inactive() {
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [branchFilter, setBranchFilter] = useState('');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<PageSize>(15);
+  const [pageSize, setPageSize] = useState<PageSizeOption>(15);
+  const effectivePageSize = pageSize === 'all' ? ALL_ROWS_PAGE_SIZE : pageSize;
+  const [sortBy, setSortBy] = useState('');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  function toggleSort(field: string) {
+    const next = nextSortState(field, sortBy, sortDir);
+    setSortBy(next.sortBy);
+    setSortDir(next.sortDir);
+    setPage(1);
+  }
 
   const [form, setForm] = useState<FormValues>(EMPTY_FORM);
   const [editTarget, setEditTarget] = useState<InactiveEntry | null>(null);
@@ -531,10 +548,12 @@ export default function Inactive() {
     () => ({
       search: search.trim() || undefined,
       branch: branchFilter || undefined,
+      sortBy: sortBy || undefined,
+      sortDir: sortBy ? sortDir : undefined,
       page,
-      pageSize
+      pageSize: effectivePageSize
     }),
-    [search, branchFilter, page, pageSize]
+    [search, branchFilter, sortBy, sortDir, page, effectivePageSize]
   );
 
   const listQuery = useQuery({
@@ -644,7 +663,7 @@ export default function Inactive() {
 
   const rows = listQuery.data?.rows || [];
   const total = listQuery.data?.total || 0;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const totalPages = Math.max(1, Math.ceil(total / effectivePageSize));
 
   // Inactive downloads are available only to Head Office and Admin,
   // on both Active and Approved tabs.
@@ -746,62 +765,29 @@ export default function Inactive() {
   }
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col gap-5">
-      <div className="shrink-0 flex flex-col md:flex-row md:items-end justify-between gap-4">
+    <div className="flex-1 min-h-0 flex flex-col gap-6">
+      <div className="shrink-0 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="font-display text-2xl">Inactive Students</h2>
+          <h2 className="font-display text-2xl">{tab === 'completed' ? 'Approved' : 'Inactive'}</h2>
           <p className="text-sm text-ink-700/60 mt-1">
-            SCM submits inactive requests for Head Office and Admin approval.
+            {canExport ? 'Every branch.' : `${user?.branch} branch.`}
           </p>
         </div>
-
         <div className="flex items-center gap-2">
-          {canExport && (
-            <div className="relative" ref={exportMenuRef}>
-              <button
-                onClick={() => setExportMenuOpen((v) => !v)}
-                disabled={exporting}
-                className="inline-flex items-center justify-center gap-1.5 rounded-md border border-ink-200 px-4 py-2 text-sm text-ink-700/80 hover:bg-paper transition-colors disabled:opacity-60"
-              >
-                <Download size={16} />
-                {exporting ? 'Exporting…' : 'Download'}
-                <ChevronDown size={14} className={`transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} />
-              </button>
-
-              {exportMenuOpen && (
-                <div className="absolute right-0 mt-2 w-56 rounded-md border border-ink-100 bg-white shadow-panel py-1.5 z-20">
-                  <button
-                    onClick={() => handleExport('csv')}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-paper"
-                  >
-                    <FileText size={15} className="text-ink-700/60" />
-                    CSV <span className="text-ink-700/40">(.csv)</span>
-                  </button>
-                  <button
-                    onClick={() => handleExport('xlsx')}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-paper"
-                  >
-                    <FileSpreadsheet size={15} className="text-ink-700/60" />
-                    Excel <span className="text-ink-700/40">(.xlsx)</span>
-                  </button>
-                  <button
-                    onClick={() => handleExport('pdf')}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left hover:bg-paper"
-                  >
-                    <FileDown size={15} className="text-ink-700/60" />
-                    PDF <span className="text-ink-700/40">(.pdf)</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-
+          {canExport && <DownloadMenu exporting={exporting} onExport={handleExport} />}
         </div>
       </div>
 
-      <div className="shrink-0 flex flex-col md:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-700/40" />
+      {error && (
+        <div className="rounded-md border border-reject/20 bg-reject-light px-4 py-3 text-sm text-reject flex items-center justify-between">
+          <span>{error}</span>
+          <button onClick={() => setError(null)}><X size={16} /></button>
+        </div>
+      )}
+
+      <div className="shrink-0 flex flex-wrap items-center gap-3">
+        <div className="relative w-72">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-700/40" />
           <input
             value={search}
             onChange={(e) => {
@@ -812,146 +798,169 @@ export default function Inactive() {
               else next.delete('search');
               setSearchParams(next, { replace: true });
             }}
-            placeholder="Search MID, name or phone"
-            className="w-full rounded-md border border-ink-100 bg-white pl-9 pr-3 py-2 text-sm outline-none focus:border-ink-400"
+            placeholder="Search by name, MID, or phone number"
+            className="w-full rounded-md border border-ink-200 pl-8 pr-2 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-ink-900"
           />
         </div>
 
-        {(user?.role === 'Admin' || user?.role === 'Head Office') && (
-          <select
+        {canExport && (
+          <BranchFilter
             value={branchFilter}
-            onChange={(e) => {
-              setBranchFilter(e.target.value);
+            onChange={(b) => {
+              setBranchFilter(b);
               setPage(1);
             }}
-            className="rounded-md border border-ink-100 bg-white px-3 py-2 text-sm outline-none"
+            branches={branchesQuery.data || []}
+          />
+        )}
+
+        {(search || branchFilter) && (
+          <button
+            onClick={() => {
+              setSearch('');
+              setBranchFilter('');
+              setPage(1);
+              const next = new URLSearchParams(searchParams);
+              next.delete('search');
+              setSearchParams(next, { replace: true });
+            }}
+            className="flex items-center gap-1 text-sm text-ink-700/50 hover:text-ink-700 transition-colors px-1"
           >
-            <option value="">All branches</option>
-            {(branchesQuery.data || []).map((branch) => (
-              <option key={branch} value={branch}>{branch}</option>
-            ))}
-          </select>
+            <X size={13} />
+            Clear filters
+          </button>
         )}
       </div>
 
-      {error && (
-        <div className="rounded-md border border-reject/20 bg-reject-light px-4 py-3 text-sm text-reject flex items-center justify-between">
-          <span>{error}</span>
-          <button onClick={() => setError(null)}><X size={16} /></button>
-        </div>
+      {listQuery.isLoading && (
+        <p className="text-sm text-ink-700/60 px-1">Loading&hellip;</p>
+      )}
+      {listQuery.isError && (
+        <p className="text-sm text-reject px-1">Couldn&rsquo;t load the list. Please refresh.</p>
       )}
 
-      {(() => {
+      {listQuery.data && (() => {
         // Split into a "Needs Your Attention" table (entries actually
         // awaiting THIS user's action) and the regular table with
-        // everything else. Only relevant on the active tab - once
-        // nothing is left awaiting this user, only the single full
-        // table remains.
+        // everything else. Only relevant on the Active tab - the Approved
+        // tab is finished work, so it only ever has the single table.
         const attentionRows = tab === 'active' ? rows.filter((r) => r['Awaiting My Action']) : [];
         const hasAttention = attentionRows.length > 0;
         const mainRows = hasAttention ? rows.filter((r) => !r['Awaiting My Action']) : rows;
+        const showBranch = user?.role === 'Head Office';
 
-        const renderInactiveRows = (list: InactiveEntry[], emptyMessage: string) => (
-          <tbody>
-            {listQuery.isLoading && <tr><td colSpan={user?.role === 'Head Office' ? 7 : 6} className="px-4 py-10 text-center text-ink-700/50">Loading...</td></tr>}
-            {!listQuery.isLoading && list.length === 0 && <tr><td colSpan={user?.role === 'Head Office' ? 7 : 6} className="px-4 py-10 text-center text-ink-700/50">{emptyMessage}</td></tr>}
-            {list.map((row, i) => (
-              <tr
-                key={`${row.MID}-${row['Sl No']}`}
-                onClick={() => setSelectedInactive(row)}
-                className="border-b border-ink-100 last:border-b-0 hover:bg-paper/60 cursor-pointer"
-              >
-                <td className="px-4 py-3 text-ink-700/50">{i + 1}</td>
-                <td className="px-4 py-3 font-mono text-xs">{row.MID}</td>
-                <td className="px-4 py-3 font-medium">{row['Student Name']}</td>
-                {user?.role === 'Head Office' && <td className="px-4 py-3 text-ink-700/70">{row.Branch || '—'}</td>}
-                <td className="px-4 py-3 text-ink-700/70">{[row['Phone Number 1'], row['Phone Number 2'], row['Phone Number 3']].filter(Boolean).map((p, j) => <div key={j} className="font-mono text-xs">{p}</div>)}</td>
-                <td className="px-4 py-3"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs ${STATUS_STYLES[row.Status] || 'bg-paper text-ink-700'}`}>{INACTIVE_STATUS_LABELS[row.Status] || row.Status}</span></td>
-                <td className="px-4 py-3 max-w-sm">
-                  <div className="flex items-center gap-1.5">
-                    <div className="truncate text-xs">{row.Reason || 'Not yet provided'}</div>
-                    {(user?.role==='Admin'||user?.role==='Head Office') && row['Screenshot Uploaded'] &&
-                      <span onClick={(e)=>e.stopPropagation()}><ViewAttachmentButtonIcon mid={row.MID} sheet={tab==='completed'?'completed':'response'}/></span>}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        );
-
-        const tableHead = (
-          <thead className="[&_th]:sticky [&_th]:top-0 [&_th]:z-[1] [&_th]:bg-paper [&_th]:[box-shadow:inset_0_-1px_0_theme(colors.ink.100)]">
-            <tr>
-              <th className="text-left px-4 py-3 font-medium">#</th>
-              <th className="text-left px-4 py-3 font-medium">MID</th>
-              <th className="text-left px-4 py-3 font-medium">Student</th>
-              {user?.role === 'Head Office' && <th className="text-left px-4 py-3 font-medium">Branch</th>}
-              <th className="text-left px-4 py-3 font-medium">Phone numbers</th>
-              <th className="text-left px-4 py-3 font-medium">Status</th>
-              <th className="text-left px-4 py-3 font-medium">Reason</th>
+        const renderHead = () => (
+          <thead className={STICKY_HEAD_CLASS}>
+            <tr className="text-left text-xs uppercase tracking-wide text-ink-700/50">
+              <th className="px-4 py-3 font-medium">#</th>
+              <SortableTh label="MID" sortKey="MID" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+              <SortableTh label="Student" sortKey="Student Name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+              {showBranch && (
+                <SortableTh label="Branch" sortKey="Branch" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+              )}
+              <th className="px-4 py-3 font-medium">Phone numbers</th>
+              <SortableTh label="Status" sortKey="Status" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+              <th className="px-4 py-3 font-medium">Reason</th>
+              <th className="px-4 py-3 font-medium text-right">Actions</th>
             </tr>
           </thead>
         );
 
+        const renderRows = (list: InactiveEntry[], emptyMessage: string) => (
+          <tbody>
+            {list.map((row, index) => {
+              const awaitingMyAction = canExport && !!row['Awaiting My Action'];
+              const phones = [row['Phone Number 1'], row['Phone Number 2'], row['Phone Number 3']].filter(Boolean) as string[];
+              return (
+                <tr
+                  key={`${row.MID}-${row['Sl No']}`}
+                  onClick={() => setSelectedInactive(row)}
+                  className={`border-b border-ink-100 align-top cursor-pointer hover:bg-paper/60 ${
+                    awaitingMyAction ? 'bg-amber-light/40 border-l-2 border-l-amber' : ''
+                  }`}
+                >
+                  <td className="px-4 py-3 text-ink-700/50">{(page - 1) * effectivePageSize + index + 1}</td>
+                  <td className="px-4 py-3 font-mono text-xs">{row.MID}</td>
+                  <td className="px-4 py-3 font-medium">{row['Student Name']}</td>
+                  {showBranch && <td className="px-4 py-3 text-ink-700/70">{row.Branch || '—'}</td>}
+                  <td className="px-4 py-3 text-ink-700/70">
+                    {phones.length
+                      ? phones.map((p, j) => <div key={j} className="font-mono text-xs">{p}</div>)
+                      : <span className="text-ink-700/30 italic">—</span>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs ${STATUS_STYLES[row.Status] || 'bg-paper text-ink-700'}`}>
+                      {INACTIVE_STATUS_LABELS[row.Status] || row.Status}
+                    </span>
+                    {awaitingMyAction && (
+                      <span className="ml-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium bg-amber text-white align-middle">
+                        Needs your decision
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-ink-700/70 max-w-xs">
+                    <div className="flex items-center gap-1.5">
+                      <div className="truncate text-xs">{row.Reason || 'Not yet provided'}</div>
+                      {(user?.role === 'Admin' || user?.role === 'Head Office') && row['Screenshot Uploaded'] && (
+                        <span onClick={(e) => e.stopPropagation()}>
+                          <ViewAttachmentButtonIcon mid={row.MID} sheet={tab === 'completed' ? 'completed' : 'response'} />
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-right text-ink-700/40">→</td>
+                </tr>
+              );
+            })}
+            {list.length === 0 && (
+              <tr>
+                <td colSpan={8} className="px-5 py-8 text-center text-ink-700/50 text-sm">
+                  {emptyMessage}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        );
+
         return (
-          <>
-            <div className="flex-1 min-h-0 overflow-auto space-y-5">
+          <div className="flex-1 min-h-0 overflow-auto space-y-6">
             {hasAttention && (
-              <div className="rounded-lg border-2 border-amber bg-white overflow-clip min-w-fit">
+              <div className="bg-white rounded-lg border-2 border-amber shadow-panel overflow-clip min-w-fit">
                 <div className="px-4 py-2.5 bg-amber-light border-b border-amber/30">
-                  <h3 className="text-sm font-semibold text-amber">Needs Your Attention ({attentionRows.length})</h3>
+                  <h3 className="text-sm font-semibold text-amber">
+                    Needs Your Attention ({attentionRows.length})
+                  </h3>
                 </div>
-                <div>
-                  <table className="w-full text-sm">
-                    {tableHead}
-                    {renderInactiveRows(attentionRows, 'Nothing here.')}
-                  </table>
-                </div>
+                <table className="w-full text-sm min-w-[900px]">
+                  {renderHead()}
+                  {renderRows(attentionRows, 'Nothing here.')}
+                </table>
               </div>
             )}
 
-            <div className="rounded-lg border border-ink-100 bg-white overflow-clip min-w-fit">
-              <div>
-                <table className="w-full text-sm">
-                  {tableHead}
-                  {renderInactiveRows(mainRows, 'No inactive requests found.')}
-                </table>
-              </div>
+            <div className="bg-white rounded-lg border border-ink-100 shadow-panel overflow-clip min-w-fit">
+              <table className="w-full text-sm min-w-[900px]">
+                {renderHead()}
+                {renderRows(mainRows, 'No entries match this search.')}
+              </table>
             </div>
-            </div>
-              <div className="shrink-0 flex items-center justify-between px-4 py-3 rounded-lg border border-ink-100 bg-white">
-          <span className="text-xs text-ink-700/60">{total} request(s)</span>
-          <div className="flex items-center gap-2">
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value) as PageSize);
-                setPage(1);
-              }}
-              className="rounded-md border border-ink-100 bg-white px-2 py-1.5 text-xs"
-            >
-              {PAGE_SIZE_OPTIONS.map((n) => <option key={n} value={n}>{n}/page</option>)}
-            </select>
-            <button
-              disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
-              className="p-1.5 rounded-md border border-ink-100 disabled:opacity-30"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <span className="text-xs">Page {page} of {totalPages}</span>
-            <button
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-              className="p-1.5 rounded-md border border-ink-100 disabled:opacity-30"
-            >
-              <ChevronRight size={16} />
-            </button>
           </div>
-        </div>
-          </>
         );
       })()}
+
+      {listQuery.data && (
+        <ListFooter
+          page={page}
+          totalPages={totalPages}
+          total={total}
+          pageSize={pageSize}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setPage(1);
+          }}
+          onPageChange={setPage}
+        />
+      )}
 
       {selectedInactive && (
         <InactiveDetailsModal

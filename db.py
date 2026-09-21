@@ -145,6 +145,52 @@ def get_cursor_(dict_cursor=True):
             cur.close()
 
 
+def fetch_all_(sql, params=None):
+    """Runs ONE read-only query and returns every row as a dict.
+
+    This is the fast path for reads. get_conn_() spends extra network
+    round trips on every call (a 'SELECT 1' liveness check, then an
+    implicit BEGIN, then a COMMIT) - roughly 4 round trips to Neon for a
+    single SELECT. Here the connection runs in autocommit mode with no
+    separate liveness check, so a read costs 1 round trip. If the pooled
+    connection turns out to be dead (Neon drops idle ones), it is thrown
+    away and the read is retried on another one; if that keeps failing
+    it falls back to the fully-checked get_cursor_() path, which has its
+    own retry-with-backoff.
+
+    Only use this for plain SELECTs - it never commits or rolls back.
+    """
+    pool = _get_pool()
+    for _ in range(3):
+        try:
+            conn = pool.getconn()
+        except psycopg2.OperationalError:
+            break  # let the robust path below deal with it (it retries)
+        broken = False
+        try:
+            if conn.closed:
+                broken = True
+                continue
+            conn.autocommit = True
+            try:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute(sql, params)
+                    return cur.fetchall()
+            finally:
+                try:
+                    if not conn.closed:
+                        conn.autocommit = False
+                except Exception:
+                    broken = True
+        except (psycopg2.OperationalError, psycopg2.InterfaceError):
+            broken = True
+        finally:
+            pool.putconn(conn, close=broken)
+    with get_cursor_() as cur:
+        cur.execute(sql, params)
+        return cur.fetchall()
+
+
 def check_connection_():
     """Used by the /api/ health check and setup script to fail fast with a
     clear error instead of a confusing traceback if DATABASE_URL is wrong."""

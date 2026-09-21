@@ -38,7 +38,11 @@ from datetime import datetime
 import psycopg2.extras
 
 import config
-from db import get_conn_, get_cursor_
+import logging
+
+from db import get_conn_, get_cursor_, fetch_all_
+
+logger = logging.getLogger(__name__)
 
 _cache_lock = threading.RLock()
 _cache = {}  # key -> (value, expires_at_epoch_seconds)
@@ -112,13 +116,90 @@ def now_iso_():
 # Simple in-process cache (same shape as the old sheet_utils cache)
 # ---------------------------------------------------------------
 
-def get_cached_(key, ttl_seconds, producer_fn):
+# How long an expired entry may still be served (while a fresh copy is
+# loaded in the background) for callers that opt in with stale_ok=True.
+STALE_GRACE_SECONDS = 30 * 60
+
+_key_locks = {}       # key -> Lock, so only ONE thread loads a given key at a time
+_refreshing = set()   # keys currently being refreshed in the background
+_generation = {}      # key -> int, bumped every time that key is invalidated
+_global_epoch = 0     # bumped when the whole cache is cleared
+
+
+def _key_lock_(key):
+    with _cache_lock:
+        lock = _key_locks.get(key)
+        if lock is None:
+            lock = _key_locks[key] = threading.Lock()
+        return lock
+
+
+def _snapshot_(key):
+    """Remembers 'which version of the data world' we are in, so a slow
+    load that finishes AFTER a write invalidated the key can't put
+    pre-write data back into the cache."""
+    with _cache_lock:
+        return (_global_epoch, _generation.get(key, 0))
+
+
+def _store_(key, value, ttl_seconds, snapshot):
+    with _cache_lock:
+        if snapshot == (_global_epoch, _generation.get(key, 0)):
+            _cache[key] = (value, time.time() + ttl_seconds)
+            return True
+    return False
+
+
+def _refresh_in_background_(key, ttl_seconds, producer_fn):
+    with _cache_lock:
+        if key in _refreshing:
+            return
+        _refreshing.add(key)
+
+    def run():
+        try:
+            snapshot = _snapshot_(key)
+            _store_(key, producer_fn(), ttl_seconds, snapshot)
+        except Exception:  # noqa: BLE001 - keep serving the previous copy
+            logger.exception('Background cache refresh failed for %s', key)
+        finally:
+            with _cache_lock:
+                _refreshing.discard(key)
+
+    threading.Thread(target=run, daemon=True, name='cache-refresh').start()
+
+
+def get_cached_(key, ttl_seconds, producer_fn, stale_ok=False):
+    """Returns the cached value for `key`, loading it with producer_fn
+    when missing/expired.
+
+    - The global lock is only held for quick dictionary operations,
+      never while talking to the database, so a slow load of one key no
+      longer blocks every other request.
+    - Concurrent requests for the same missing key share one load.
+    - stale_ok=True: an expired value is returned immediately and
+      refreshed in the background, so users never wait on the database
+      for data the app has already loaded. Writes made through this app
+      still invalidate the key, so they are never hidden by this.
+    """
+    now = time.time()
     with _cache_lock:
         hit = _cache.get(key)
+    if hit:
+        if hit[1] > now:
+            return hit[0]
+        if stale_ok and now - hit[1] < STALE_GRACE_SECONDS:
+            _refresh_in_background_(key, ttl_seconds, producer_fn)
+            return hit[0]
+
+    with _key_lock_(key):
+        with _cache_lock:
+            hit = _cache.get(key)
         if hit and hit[1] > time.time():
             return hit[0]
+        snapshot = _snapshot_(key)
         value = producer_fn()
-        _cache[key] = (value, time.time() + ttl_seconds)
+        _store_(key, value, ttl_seconds, snapshot)
         return value
 
 
@@ -126,6 +207,7 @@ def invalidate_cache_(keys):
     with _cache_lock:
         for k in keys:
             _cache.pop(k, None)
+            _generation[k] = _generation.get(k, 0) + 1
 
 
 def invalidate_sheet_cache_(names=None):
@@ -133,12 +215,16 @@ def invalidate_sheet_cache_(names=None):
     is no per-name worksheet handle to drop anymore, but callers may
     still invoke this after bulk operations, so it's a safe no-op that
     also clears the row cache for good measure."""
+    global _global_epoch
     with _cache_lock:
         if names is None:
             _cache.clear()
+            _global_epoch += 1
         else:
             for name in names:
-                _cache.pop(_sheet_rows_cache_key_(name), None)
+                key = _sheet_rows_cache_key_(name)
+                _cache.pop(key, None)
+                _generation[key] = _generation.get(key, 0) + 1
 
 
 def _sheet_rows_cache_key_(name):
@@ -150,17 +236,57 @@ def _sheet_rows_cache_key_(name):
 # ---------------------------------------------------------------
 
 def _read_sheet_as_objects_uncached_(name):
-    with get_cursor_() as cur:
-        cur.execute(
-            'SELECT id, data FROM sheet_rows WHERE sheet_name = %s ORDER BY id ASC',
-            (name,),
-        )
-        rows = []
-        for record in cur.fetchall():
-            obj = dict(record['data'] or {})
-            obj['__row'] = record['id']
-            rows.append(obj)
-        return rows
+    records = fetch_all_(
+        'SELECT id, data FROM sheet_rows WHERE sheet_name = %s ORDER BY id ASC',
+        (name,),
+    )
+    rows = []
+    for record in records:
+        obj = dict(record['data'] or {})
+        obj['__row'] = record['id']
+        rows.append(obj)
+    return rows
+
+
+def warm_sheet_cache_(names=None):
+    """Loads several sheets into the cache with ONE query. Called once at
+    startup so the first person to open the app doesn't wait on Neon."""
+    ensure_sheets_exist_()
+    if names is None:
+        names = [
+            config.SHEET_USERS, config.SHEET_BRANCHES,
+            config.SHEET_RESPONSE, config.SHEET_COMPLETED,
+            config.SHEET_INACTIVE_RESPONSE, config.SHEET_INACTIVE_COMPLETED,
+            config.SHEET_TRANSFER_RESPONSE, config.SHEET_TRANSFER_COMPLETED,
+            config.SHEET_NOTIFICATIONS,
+        ]
+    names = list(names)
+    keys = {n: _sheet_rows_cache_key_(n) for n in names}
+    snapshots = {n: _snapshot_(keys[n]) for n in names}
+    records = fetch_all_(
+        'SELECT sheet_name, id, data FROM sheet_rows '
+        'WHERE sheet_name = ANY(%s) ORDER BY id ASC',
+        (names,),
+    )
+    buckets = {n: [] for n in names}
+    for record in records:
+        obj = dict(record['data'] or {})
+        obj['__row'] = record['id']
+        buckets[record['sheet_name']].append(obj)
+    ttl = getattr(config, 'SHEET_READ_CACHE_TTL_SECONDS', 8)
+    for n in names:
+        _store_(keys[n], buckets[n], ttl, snapshots[n])
+
+
+def start_cache_warmup_():
+    """Fire-and-forget background warm-up (never blocks or breaks boot)."""
+    def run():
+        try:
+            warm_sheet_cache_()
+        except Exception:  # noqa: BLE001
+            logger.exception('Cache warm-up failed (the app will just load data on demand)')
+
+    threading.Thread(target=run, daemon=True, name='cache-warmup').start()
 
 
 def read_sheet_as_objects_(name):
@@ -174,6 +300,7 @@ def read_sheet_as_objects_(name):
     return get_cached_(
         _sheet_rows_cache_key_(name), ttl,
         lambda: _read_sheet_as_objects_uncached_(name),
+        stale_ok=True,
     )
 
 

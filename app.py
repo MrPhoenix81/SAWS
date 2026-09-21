@@ -24,7 +24,7 @@ Then open http://localhost:5000/
 from flask import Flask, render_template, send_from_directory
 
 from api import api_bp
-from db_utils import ensure_sheets_exist_
+from db_utils import ensure_sheets_exist_, start_cache_warmup_
 import scheduler
 import cleanup
 
@@ -33,6 +33,10 @@ import cleanup
 # (you can still run setup_script.py separately for seeding branches
 # and creating the first admin - see README.md).
 ensure_sheets_exist_()
+
+# Preload the busiest tables into the in-memory cache in the background
+# so the first user after a restart doesn't wait on the database.
+start_cache_warmup_()
 
 # Optional: see scheduler.py / README.md for why this is off by
 # default in favor of a Render Cron Job.

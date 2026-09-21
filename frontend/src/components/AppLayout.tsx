@@ -232,6 +232,10 @@ function InactiveNavItem({ count }: { count: number }) {
 export default function AppLayout() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const routerLocation = useLocation();
+  // Discontinue / Inactive / Transfer pages keep the page itself fixed and
+  // scroll only their table rows, so <main> must not scroll on these routes.
+  const fixedHeightPage = ['/students', '/inactive', '/transfer'].includes(routerLocation.pathname);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -402,8 +406,20 @@ export default function AppLayout() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto px-6 py-8">
-          <div className="max-w-6xl mx-auto">
+        <main
+          className={
+            fixedHeightPage
+              ? 'flex-1 min-h-0 flex flex-col overflow-hidden px-6 py-8'
+              : 'flex-1 overflow-y-auto px-6 py-8'
+          }
+        >
+          <div
+            className={
+              fixedHeightPage
+                ? 'flex-1 min-h-0 w-full max-w-6xl mx-auto flex flex-col'
+                : 'max-w-6xl mx-auto'
+            }
+          >
             <Outlet />
           </div>
         </main>

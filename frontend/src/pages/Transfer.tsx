@@ -324,8 +324,8 @@ export default function Transfer() {
   function openEdit(r:TransferEntry){setEditTarget(r);setForm(toForm(r));}
   function updateUrl(next:'active'|'completed'){setTab(next);setPage(1);const n=new URLSearchParams(sp);if(next==='completed')n.set('tab','completed');else n.delete('tab');setSp(n,{replace:true});}
 
-  return <div className="space-y-5">
-    <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+  return <div className="flex-1 min-h-0 flex flex-col gap-5">
+    <div className="shrink-0 flex flex-col md:flex-row md:items-end justify-between gap-4">
       <div><h2 className="font-display text-2xl">Transfer Students</h2><p className="text-sm text-ink-700/60 mt-1">SCM submits transfer requests for Head Office and Admin approval.</p></div>
       {canExport && <div className="flex gap-2">
         <button disabled={exporting} onClick={()=>exportData('csv')} className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 px-3 py-2 text-sm hover:bg-paper disabled:opacity-50"><FileText size={15}/>CSV</button>
@@ -333,8 +333,8 @@ export default function Transfer() {
         <button disabled={exporting} onClick={()=>exportData('pdf')} className="inline-flex items-center gap-1.5 rounded-md border border-ink-200 px-3 py-2 text-sm hover:bg-paper disabled:opacity-50"><FileDown size={15}/>PDF</button>
       </div>}
     </div>
-    <div className="rounded-lg border border-ink-100 bg-white shadow-panel overflow-hidden">
-      <div className="p-4 border-b border-ink-100 flex flex-col lg:flex-row gap-3">
+    <div className="flex-1 min-h-0 flex flex-col rounded-lg border border-ink-100 bg-white shadow-panel overflow-hidden">
+      <div className="shrink-0 p-4 border-b border-ink-100 flex flex-col lg:flex-row gap-3">
         <div className="relative flex-1"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-700/40"/><input value={search} onChange={e=>{setSearch(e.target.value);setPage(1)}} placeholder="Search MID, name or phone..." className="w-full pl-9 pr-3 py-2 rounded-md border border-ink-100 text-sm"/></div>
         {(user?.role==='Admin'||user?.role==='Head Office') && <select value={branchFilter} onChange={e=>{setBranchFilter(e.target.value);setPage(1)}} className="rounded-md border border-ink-100 px-3 py-2 text-sm"><option value="">All branches</option>{(branchesQuery.data||[]).map(b=><option key={b} value={b}>{b}</option>)}</select>}
       </div>
@@ -375,18 +375,20 @@ export default function Transfer() {
         );
 
         const tableHead = (
-          <thead className="bg-paper text-xs text-ink-700/60"><tr>
+          <thead className="[&_th]:sticky [&_th]:top-0 [&_th]:z-[1] [&_th]:bg-paper [&_th]:[box-shadow:inset_0_-1px_0_theme(colors.ink.100)] text-xs text-ink-700/60"><tr>
             <th className="text-left px-4 py-3">#</th><th className="text-left px-4 py-3">MID</th><th className="text-left px-4 py-3">Student</th>{showBranch && <th className="text-left px-4 py-3">Branch</th>}<th className="text-left px-4 py-3">Phone numbers</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Reason</th>
           </tr></thead>
         );
 
         return <>
-          {hasAttention && <div className="m-4 rounded-lg border-2 border-amber overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-auto">
+          {hasAttention && <div className="m-4 rounded-lg border-2 border-amber overflow-clip min-w-fit">
             <div className="px-4 py-2.5 bg-amber-light border-b border-amber/30"><h3 className="text-sm font-semibold text-amber">Needs Your Attention ({attentionRows.length})</h3></div>
-            <div className="overflow-x-auto"><table className="w-full text-sm">{tableHead}{renderTransferRows(attentionRows,'Nothing here.')}</table></div>
+            <div><table className="w-full text-sm">{tableHead}{renderTransferRows(attentionRows,'Nothing here.')}</table></div>
           </div>}
-          <div className="overflow-x-auto"><table className="w-full text-sm">{tableHead}{renderTransferRows(mainRows,'No transfer records found.')}</table></div>
-          <div className="flex items-center justify-between px-4 py-3 border-t border-ink-100 text-xs text-ink-700/60"><span>{total} record(s)</span><div className="flex items-center gap-2"><select value={pageSize} onChange={e=>{setPageSize(Number(e.target.value) as PageSize);setPage(1)}} className="border border-ink-100 rounded px-2 py-1"><option value={15}>15</option><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select><button disabled={page<=1} onClick={()=>setPage(p=>p-1)}><ChevronLeft size={16}/></button><span>{page}/{pages}</span><button disabled={page>=pages} onClick={()=>setPage(p=>p+1)}><ChevronRight size={16}/></button></div></div>
+          <div className="min-w-fit"><table className="w-full text-sm">{tableHead}{renderTransferRows(mainRows,'No transfer records found.')}</table></div>
+          </div>
+          <div className="shrink-0 flex items-center justify-between px-4 py-3 border-t border-ink-100 text-xs text-ink-700/60"><span>{total} record(s)</span><div className="flex items-center gap-2"><select value={pageSize} onChange={e=>{setPageSize(Number(e.target.value) as PageSize);setPage(1)}} className="border border-ink-100 rounded px-2 py-1"><option value={15}>15</option><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select><button disabled={page<=1} onClick={()=>setPage(p=>p-1)}><ChevronLeft size={16}/></button><span>{page}/{pages}</span><button disabled={page>=pages} onClick={()=>setPage(p=>p+1)}><ChevronRight size={16}/></button></div></div>
         </>;
       })()}
     </div>

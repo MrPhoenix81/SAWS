@@ -746,8 +746,8 @@ export default function Inactive() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+    <div className="flex-1 min-h-0 flex flex-col gap-5">
+      <div className="shrink-0 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h2 className="font-display text-2xl">Inactive Students</h2>
           <p className="text-sm text-ink-700/60 mt-1">
@@ -799,7 +799,7 @@ export default function Inactive() {
         </div>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-3">
+      <div className="shrink-0 flex flex-col md:flex-row gap-3">
         <div className="relative flex-1">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-700/40" />
           <input
@@ -880,7 +880,7 @@ export default function Inactive() {
         );
 
         const tableHead = (
-          <thead className="bg-paper border-b border-ink-100">
+          <thead className="[&_th]:sticky [&_th]:top-0 [&_th]:z-[1] [&_th]:bg-paper [&_th]:[box-shadow:inset_0_-1px_0_theme(colors.ink.100)]">
             <tr>
               <th className="text-left px-4 py-3 font-medium">#</th>
               <th className="text-left px-4 py-3 font-medium">MID</th>
@@ -895,12 +895,13 @@ export default function Inactive() {
 
         return (
           <>
+            <div className="flex-1 min-h-0 overflow-auto space-y-5">
             {hasAttention && (
-              <div className="rounded-lg border-2 border-amber bg-white overflow-hidden">
+              <div className="rounded-lg border-2 border-amber bg-white overflow-clip min-w-fit">
                 <div className="px-4 py-2.5 bg-amber-light border-b border-amber/30">
                   <h3 className="text-sm font-semibold text-amber">Needs Your Attention ({attentionRows.length})</h3>
                 </div>
-                <div className="overflow-x-auto">
+                <div>
                   <table className="w-full text-sm">
                     {tableHead}
                     {renderInactiveRows(attentionRows, 'Nothing here.')}
@@ -909,14 +910,16 @@ export default function Inactive() {
               </div>
             )}
 
-            <div className="rounded-lg border border-ink-100 bg-white overflow-hidden">
-              <div className="overflow-x-auto">
+            <div className="rounded-lg border border-ink-100 bg-white overflow-clip min-w-fit">
+              <div>
                 <table className="w-full text-sm">
                   {tableHead}
                   {renderInactiveRows(mainRows, 'No inactive requests found.')}
                 </table>
               </div>
-              <div className="flex items-center justify-between px-4 py-3 border-t border-ink-100">
+            </div>
+            </div>
+              <div className="shrink-0 flex items-center justify-between px-4 py-3 rounded-lg border border-ink-100 bg-white">
           <span className="text-xs text-ink-700/60">{total} request(s)</span>
           <div className="flex items-center gap-2">
             <select
@@ -946,7 +949,6 @@ export default function Inactive() {
             </button>
           </div>
         </div>
-      </div>
           </>
         );
       })()}

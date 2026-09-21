@@ -451,8 +451,8 @@ export default function Students() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="flex-1 min-h-0 flex flex-col gap-6">
+      <div className="shrink-0 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h2 className="font-display text-2xl">{tab === 'response' ? 'Discontinue' : 'Approved'}</h2>
           <p className="text-sm text-ink-700/60 mt-1">
@@ -517,7 +517,7 @@ export default function Students() {
         <div className="rounded-md bg-reject-light text-reject text-sm px-3 py-2">{exportError}</div>
       )}
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="shrink-0 flex flex-wrap items-center gap-3">
         <div className="relative w-72">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-700/40" />
           <input
@@ -706,8 +706,8 @@ export default function Students() {
         const mainRows = hasAttention ? allRows.filter((r) => !r['Awaiting My Action']) : allRows;
 
         const renderHead = () => (
-          <thead>
-            <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-700/50">
+          <thead className="[&_th]:sticky [&_th]:top-0 [&_th]:z-[1] [&_th]:bg-white [&_th]:[box-shadow:inset_0_-1px_0_theme(colors.ink.100)]">
+            <tr className="text-left text-xs uppercase tracking-wide text-ink-700/50">
               <th className="px-4 py-3 font-medium">#</th>
               {showsBillingColumns(user?.role) && (
                 <SortableTh label="MID" sortKey="MID" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
@@ -753,9 +753,9 @@ export default function Students() {
         );
 
         return (
-          <>
+          <div className="flex-1 min-h-0 overflow-auto space-y-6">
             {hasAttention && (
-              <div className="bg-white rounded-lg border-2 border-amber shadow-panel overflow-hidden overflow-x-auto">
+              <div className="bg-white rounded-lg border-2 border-amber shadow-panel overflow-clip min-w-fit">
                 <div className="px-4 py-2.5 bg-amber-light border-b border-amber/30">
                   <h3 className="text-sm font-semibold text-amber">
                     Needs Your Attention ({attentionRows.length})
@@ -768,18 +768,18 @@ export default function Students() {
               </div>
             )}
 
-            <div className="bg-white rounded-lg border border-ink-100 shadow-panel overflow-hidden overflow-x-auto">
+            <div className="bg-white rounded-lg border border-ink-100 shadow-panel overflow-clip min-w-fit">
               <table className="w-full text-sm min-w-[900px]">
                 {renderHead()}
                 {renderRows(mainRows, 'No entries match this search.')}
               </table>
             </div>
-          </>
+          </div>
         );
       })()}
 
       {studentsQuery.data && (
-        <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-ink-700/60">
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 text-sm text-ink-700/60">
           <div className="flex items-center gap-2">
             <span>Rows per page</span>
             <select

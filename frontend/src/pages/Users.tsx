@@ -96,8 +96,7 @@ export default function Users() {
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
-      <div className="flex flex-wrap gap-3">
+      <div className="shrink-0 flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-[220px]">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-700/40" />
           <input
@@ -121,6 +120,7 @@ export default function Users() {
         </select>
       </div>
 
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
       {resetError && (
         <div className="rounded-md bg-reject-light text-reject text-sm px-3 py-2">
           {resetError}

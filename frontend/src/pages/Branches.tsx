@@ -66,8 +66,7 @@ export default function Branches() {
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
-      <div className="flex flex-wrap gap-3 items-center">
+      <div className="shrink-0 flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[220px]">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-700/40" />
           <input
@@ -88,6 +87,7 @@ export default function Branches() {
         </label>
       </div>
 
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
       <div className="bg-white rounded-lg border border-ink-100 shadow-panel overflow-hidden">
         {branchesQuery.isLoading && (
           <p className="text-sm text-ink-700/60 px-5 py-6">Loading branches&hellip;</p>

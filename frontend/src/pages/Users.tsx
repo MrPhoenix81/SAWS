@@ -120,14 +120,14 @@ export default function Users() {
         </select>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
+      <div className="flex-1 min-h-0 flex flex-col space-y-4">
       {resetError && (
-        <div className="rounded-md bg-reject-light text-reject text-sm px-3 py-2">
+        <div className="shrink-0 rounded-md bg-reject-light text-reject text-sm px-3 py-2">
           {resetError}
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-ink-100 shadow-panel overflow-hidden">
+      <div className="flex-1 min-h-0 bg-white rounded-lg border border-ink-100 shadow-panel overflow-y-auto">
         {usersQuery.isLoading && (
           <p className="text-sm text-ink-700/60 px-5 py-6">Loading users&hellip;</p>
         )}
@@ -137,7 +137,7 @@ export default function Users() {
 
         {usersQuery.data && (
           <table className="w-full text-sm">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-white">
               <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-700/50">
                 <th className="px-5 py-3 font-medium">Name</th>
                 <th className="px-5 py-3 font-medium">Email</th>

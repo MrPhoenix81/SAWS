@@ -176,7 +176,11 @@ export interface DashboardData {
     monthlyTrend: TrendPoint[];
     approvalTrend: TrendPoint[];
     branchComparison: BranchCount[];
-    statusDistribution: StatusCount[];
+    /** One sorted (highest -> lowest) status breakdown per workflow. Each
+     *  workflow's "Approved" bucket is the completed-sheet count; other
+     *  entries are that workflow's active statuses, labelled without the
+     *  workflow name prefix (the chart it feeds already groups by workflow). */
+    statusDistribution: Record<'Discontinue' | 'Inactive' | 'Transfer', StatusCount[]>;
     workflowComparison: WorkflowSummary[];
   };
 }

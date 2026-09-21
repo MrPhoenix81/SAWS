@@ -13,7 +13,22 @@ import {
   LabelList,
   Cell
 } from 'recharts';
-import { Download, SlidersHorizontal, X, ChevronDown, FileText, FileSpreadsheet, FileDown } from 'lucide-react';
+import {
+  Download,
+  SlidersHorizontal,
+  X,
+  ChevronDown,
+  FileText,
+  FileSpreadsheet,
+  FileDown,
+  Clock,
+  UserCheck,
+  CheckCircle2,
+  XCircle,
+  CalendarDays,
+  CalendarRange,
+  type LucideIcon
+} from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -21,18 +36,33 @@ import { callApi, listBranches } from '@/lib/apiClient';
 import { useAuth } from '@/context/AuthContext';
 import type { DashboardData } from '@/types';
 
-const CARD_DEFS: { key: keyof DashboardData['cards']; label: string; accent: string }[] = [
-  { key: 'pending', label: 'Pending', accent: 'text-amber' },
-  { key: 'awaitingAdminApproval', label: 'Awaiting Admin', accent: 'text-amber' },
-  { key: 'approved', label: 'Approved', accent: 'text-approve' },
-  { key: 'rejected', label: 'Rejected', accent: 'text-reject' },
-  { key: 'todaysEntries', label: "Today's Entries", accent: 'text-ink' },
-  { key: 'monthlyEntries', label: 'This Month', accent: 'text-ink' }
+const CARD_DEFS: {
+  key: keyof DashboardData['cards'];
+  label: string;
+  accent: string;
+  tint: string;
+  icon: LucideIcon;
+}[] = [
+  { key: 'pending', label: 'Pending', accent: 'text-amber', tint: 'bg-amber-light/50', icon: Clock },
+  { key: 'awaitingAdminApproval', label: 'Awaiting Admin', accent: 'text-amber', tint: 'bg-amber-light/50', icon: UserCheck },
+  { key: 'approved', label: 'Approved', accent: 'text-approve', tint: 'bg-approve-light/50', icon: CheckCircle2 },
+  { key: 'rejected', label: 'Rejected', accent: 'text-reject', tint: 'bg-reject-light/50', icon: XCircle },
+  { key: 'todaysEntries', label: "Today's Entries", accent: 'text-ink', tint: 'bg-ink-50', icon: CalendarDays },
+  { key: 'monthlyEntries', label: 'This Month', accent: 'text-ink', tint: 'bg-ink-50', icon: CalendarRange }
 ];
 
-// Distinct colour per status so each bar is visually identifiable at a
-// glance. Cycles if there are ever more statuses than colours defined here.
-const STATUS_COLORS = ['#12163F', '#F5A623', '#2FA84F', '#D64545', '#6C5CE7', '#00A9A5'];
+// Shared blue scale for any chart shaded by rank: darkest = highest value,
+// lightest = lowest. Capped at a mid-light blue (not the palest tint) so the
+// smallest bar/segment stays legible against a white card.
+const BLUE_SHADES = ['#0B3B66', '#0E4E85', '#1568A6', '#2685C4', '#3E93C9', '#6EB3E0', '#8FC3E5'];
+function shadeForRank(index: number) {
+  return BLUE_SHADES[Math.min(index, BLUE_SHADES.length - 1)];
+}
+// Pick a legible label color for the count printed inside/at the end of a
+// bar - dark bars need white text, the lightest one or two need dark text.
+function labelColorForRank(index: number) {
+  return index >= BLUE_SHADES.length - 2 ? '#0E1230' : '#fff';
+}
 
 /**
  * Builds a one-page PDF summary of the dashboard (KPI cards, status
@@ -70,14 +100,17 @@ function downloadOverviewPdf(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let nextY = (doc as any).lastAutoTable.finalY + 24;
 
-  if (data.charts.statusDistribution.length > 0) {
+  const statusRows = (['Discontinue', 'Inactive', 'Transfer'] as const).flatMap((wf) =>
+    data.charts.statusDistribution[wf].map((s) => [`${wf}: ${s.status}`, String(s.count)])
+  );
+  if (statusRows.length > 0) {
     doc.setFontSize(11);
     doc.setTextColor(20);
     doc.text('Status distribution', 40, nextY);
     autoTable(doc, {
       startY: nextY + 8,
       head: [['Status', 'Count']],
-      body: data.charts.statusDistribution.map((s) => [s.status, String(s.count)]),
+      body: statusRows,
       styles: { fontSize: 9, cellPadding: 6 },
       headStyles: { fillColor: [18, 22, 63], textColor: 255 },
       margin: { left: 40, right: 40 },
@@ -353,13 +386,18 @@ export default function Overview() {
       {data && (
         <>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {CARD_DEFS.map(({ key, label, accent }) => (
+            {CARD_DEFS.map(({ key, label, accent, tint, icon: Icon }) => (
               <div
                 key={key}
-                className="bg-white rounded-lg border border-ink-100 shadow-panel px-4 py-4"
+                className="bg-white rounded-lg border border-ink-100 shadow-panel px-4 py-4 flex flex-col gap-3"
               >
-                <p className="text-xs text-ink-700/60">{label}</p>
-                <p className={`font-display text-3xl mt-1 ${accent}`}>{data.cards[key]}</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-ink-700/60">{label}</p>
+                  <span className={`flex items-center justify-center h-7 w-7 rounded-md ${tint} ${accent}`}>
+                    <Icon size={14} />
+                  </span>
+                </div>
+                <p className={`font-display text-3xl ${accent}`}>{data.cards[key]}</p>
               </div>
             ))}
           </div>
@@ -393,58 +431,125 @@ export default function Overview() {
               </div>
             </div>
 
+            {(['Discontinue', 'Inactive', 'Transfer'] as const).map((workflow) => {
+              const rows = data.charts.statusDistribution[workflow];
+              return (
+                <div key={workflow} className="bg-white rounded-lg border border-ink-100 shadow-panel p-5 flex flex-col">
+                  <h3 className="text-sm font-medium mb-3 shrink-0">Status distribution — {workflow}</h3>
+                  <div className="flex-1 min-h-[220px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart
+                        data={rows}
+                        layout="vertical"
+                        margin={{ left: 8, right: 24, top: 4, bottom: 4 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" stroke="#eee" horizontal={false} />
+                        <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
+                        <YAxis
+                          type="category"
+                          dataKey="status"
+                          tick={{ fontSize: 10 }}
+                          width={140}
+                        />
+                        <Tooltip />
+                        <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={18}>
+                          <LabelList
+                            dataKey="count"
+                            content={(props: {
+                              x?: number | string; y?: number | string;
+                              width?: number | string; height?: number | string;
+                              value?: number | string; index?: number;
+                            }) => {
+                              const x = Number(props.x ?? 0);
+                              const y = Number(props.y ?? 0);
+                              const width = Number(props.width ?? 0);
+                              const height = Number(props.height ?? 0);
+                              const index = props.index ?? 0;
+                              return (
+                                <text
+                                  x={x + width - 6}
+                                  y={y + height / 2}
+                                  dy={4}
+                                  textAnchor="end"
+                                  fontSize={11}
+                                  fill={labelColorForRank(index)}
+                                >
+                                  {props.value}
+                                </text>
+                              );
+                            }}
+                          />
+                          {rows.map((entry, index) => (
+                            <Cell key={entry.status} fill={shadeForRank(index)} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              );
+            })}
+
             <div className="bg-white rounded-lg border border-ink-100 shadow-panel p-5 flex flex-col">
-              <h3 className="text-sm font-medium mb-3 shrink-0">Status distribution</h3>
+              <h3 className="text-sm font-medium mb-3 shrink-0">Daily entries (last 14 days)</h3>
               <div className="flex-1 min-h-[220px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={data.charts.statusDistribution}
-                    layout="vertical"
-                    margin={{ left: 8, right: 24, top: 4, bottom: 4 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#eee" horizontal={false} />
-                    <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
-                    <YAxis
-                      type="category"
-                      dataKey="status"
-                      tick={{ fontSize: 10 }}
-                      width={140}
-                    />
+                  <LineChart data={data.charts.dailyTrend}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                    <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={1} tickFormatter={(v: string) => v.slice(5)} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
                     <Tooltip />
-                    <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={18}>
-                      <LabelList dataKey="count" position="right" fill="#12163F" fontSize={11} />
-                      {data.charts.statusDistribution.map((entry, index) => (
-                        <Cell key={entry.status} fill={STATUS_COLORS[index % STATUS_COLORS.length]} />
-                      ))}
-                    </Bar>
-                  </BarChart>
+                    <Line type="monotone" dataKey="count" stroke="#1596C9" strokeWidth={2} dot={false} />
+                  </LineChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
-            {hasFullVisibility && !branchFilter && data.charts.branchComparison.length > 0 && (
-              <div className="bg-white rounded-lg border border-ink-100 shadow-panel p-5 lg:col-span-2">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-medium">Entries by branch</h3>
-                  <p className="text-xs text-ink-700/50">Click a bar or row to drill into that branch</p>
-                </div>
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={data.charts.branchComparison}>
+            <div className="bg-white rounded-lg border border-ink-100 shadow-panel p-5 flex flex-col">
+              <h3 className="text-sm font-medium mb-3 shrink-0">Approval trend (last 14 days)</h3>
+              <div className="flex-1 min-h-[220px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={data.charts.approvalTrend}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                    <XAxis dataKey="branch" tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={60} />
+                    <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={1} tickFormatter={(v: string) => v.slice(5)} />
                     <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
                     <Tooltip />
-                    <Bar
-                      dataKey="total"
-                      fill="#12163F"
-                      radius={[4, 4, 0, 0]}
-                      cursor="pointer"
-                      onClick={(bar: { branch?: string }) => bar?.branch && setBranchFilter(bar.branch)}
-                    />
-                  </BarChart>
+                    <Line type="monotone" dataKey="count" stroke="#3F7D58" strokeWidth={2} dot={false} />
+                  </LineChart>
                 </ResponsiveContainer>
               </div>
-            )}
+            </div>
+
+            {hasFullVisibility && !branchFilter && data.charts.branchComparison.length > 0 && (() => {
+              // Sort highest -> lowest so the shade scale and the bar order agree.
+              const sortedBranches = [...data.charts.branchComparison].sort((a, b) => b.total - a.total);
+              return (
+                <div className="bg-white rounded-lg border border-ink-100 shadow-panel p-5 lg:col-span-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium">Entries by branch</h3>
+                    <p className="text-xs text-ink-700/50">Click a bar or row to drill into that branch</p>
+                  </div>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={sortedBranches}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                      <XAxis dataKey="branch" tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={60} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                      <Tooltip />
+                      <Bar
+                        dataKey="total"
+                        radius={[4, 4, 0, 0]}
+                        cursor="pointer"
+                        onClick={(bar: { branch?: string }) => bar?.branch && setBranchFilter(bar.branch)}
+                      >
+                        {sortedBranches.map((entry, index) => (
+                          <Cell key={entry.branch} fill={shadeForRank(index)} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              );
+            })()}
 
             {/* Once a branch is selected (via the table/chart above, or the
                 Filters panel), show a way back to every branch without

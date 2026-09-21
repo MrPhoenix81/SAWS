@@ -106,13 +106,22 @@ def get_dashboard_data_(user, params=None):
                 'total': count_active(name) + len(workflow_rows[name][1]),
             })
 
-        status_counts = defaultdict(int)
+        # One breakdown per workflow (not a single mixed list): each
+        # workflow's completed rows collapse into a single "Approved" bar,
+        # and its active rows are grouped by status label with no workflow
+        # prefix (the surrounding chart already says which workflow it is).
+        # Sorted highest -> lowest so the frontend can shade bars by rank.
+        status_distribution = {}
         for name, (active, completed, approved_status) in workflow_rows.items():
+            counts = defaultdict(int)
+            counts['Approved'] = len(completed)
             for r in active:
-                status_counts[f"{name}: {config.STATUS_LABELS.get(r.get('Status'), r.get('Status'))}"] += 1
-            for _ in completed:
-                status_counts[f"{name}: Approved"] += 1
-        status_distribution = [{'status': k, 'count': v} for k, v in status_counts.items()]
+                counts[config.STATUS_LABELS.get(r.get('Status'), r.get('Status'))] += 1
+            status_distribution[name] = sorted(
+                ({'status': k, 'count': v} for k, v in counts.items() if v > 0),
+                key=lambda item: item['count'],
+                reverse=True,
+            )
 
         branch_comparison = []
         if is_global:

@@ -45,8 +45,8 @@ export default function Branches() {
   });
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+    <div className="flex-1 min-h-0 flex flex-col gap-6">
+      <div className="shrink-0 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h2 className="font-display text-2xl">Manage branches</h2>
           <p className="text-sm text-ink-700/60 mt-1">
@@ -66,6 +66,7 @@ export default function Branches() {
         </button>
       </div>
 
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-4">
       <div className="flex flex-wrap gap-3 items-center">
         <div className="relative flex-1 min-w-[220px]">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-700/40" />
@@ -151,6 +152,7 @@ export default function Branches() {
             </tbody>
           </table>
         )}
+      </div>
       </div>
 
       {addOpen && (

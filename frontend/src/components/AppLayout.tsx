@@ -235,9 +235,17 @@ export default function AppLayout() {
   const routerLocation = useLocation();
   // Discontinue / Inactive / Transfer pages keep the page itself fixed and
   // scroll only their table rows, so <main> must not scroll on these routes.
-  // Overview does the same now: its header stays put while only the
-  // KPI/chart area below it scrolls.
-  const fixedHeightPage = ['/', '/students', '/inactive', '/transfer'].includes(routerLocation.pathname);
+  // Overview and the admin management pages (Users/Branches/Data) do the
+  // same: their header stays put while only the content below it scrolls.
+  const fixedHeightPage = [
+    '/',
+    '/students',
+    '/inactive',
+    '/transfer',
+    '/admin/users',
+    '/admin/branches',
+    '/admin/data'
+  ].includes(routerLocation.pathname);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 

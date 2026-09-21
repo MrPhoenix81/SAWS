@@ -277,8 +277,8 @@ export default function Data() {
   );
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="flex-1 min-h-0 flex flex-col gap-6">
+      <div className="shrink-0">
         <h2 className="font-display text-2xl">Data</h2>
         <p className="text-sm text-ink-700/60 mt-1">
           Upload, download, or delete many records at once, across any workflow and branch -
@@ -286,10 +286,12 @@ export default function Data() {
         </p>
       </div>
 
-      <BackupSection />
-      <DownloadSection branchNames={branchNames} />
-      <UploadSection branchNames={branchNames} />
-      <DeleteSection branchNames={branchNames} />
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-6">
+        <BackupSection />
+        <DownloadSection branchNames={branchNames} />
+        <UploadSection branchNames={branchNames} />
+        <DeleteSection branchNames={branchNames} />
+      </div>
     </div>
   );
 }

@@ -20,6 +20,8 @@ type Workflow = 'discontinue' | 'inactive' | 'transfer';
 type CommonForm = {
   mid: string;
   studentName: string;
+  batchName: string;
+  facultyName: string;
   phone1: string;
   phone2: string;
   phone3: string;
@@ -36,7 +38,7 @@ type InactiveForm = CommonForm & { inactiveFrom: string; };
 type TransferForm = CommonForm & { transferToBranch: string; };
 
 const EMPTY_COMMON: CommonForm = {
-  mid: '', studentName: '', phone1: '', phone2: '', phone3: '', reason: ''
+  mid: '', studentName: '', batchName: '', facultyName: '', phone1: '', phone2: '', phone3: '', reason: ''
 };
 
 const EMPTY_DISCONTINUE: DiscontinueForm = {
@@ -223,6 +225,8 @@ export default function NewEntry() {
       return submitStudentEntry({
         mid: discontinue.mid.trim(),
         studentName: discontinue.studentName.trim(),
+        batchName: discontinue.batchName.trim() || undefined,
+        facultyName: discontinue.facultyName.trim() || undefined,
         phone1: discontinue.phone1.trim(),
         phone2: discontinue.phone2.trim() || undefined,
         phone3: discontinue.phone3.trim() || undefined,
@@ -249,6 +253,8 @@ export default function NewEntry() {
       return submitInactive({
         mid: inactive.mid.trim(),
         studentName: inactive.studentName.trim(),
+        batchName: inactive.batchName.trim() || undefined,
+        facultyName: inactive.facultyName.trim() || undefined,
         phone1: inactive.phone1.trim(),
         phone2: inactive.phone2.trim() || undefined,
         phone3: inactive.phone3.trim() || undefined,
@@ -271,7 +277,9 @@ export default function NewEntry() {
     mutationFn: async () => {
       const screenshots = await buildScreenshots();
       return submitTransfer({
-        mid: transfer.mid.trim(), studentName: transfer.studentName.trim(), phone1: transfer.phone1.trim(),
+        mid: transfer.mid.trim(), studentName: transfer.studentName.trim(),
+        batchName: transfer.batchName.trim() || undefined, facultyName: transfer.facultyName.trim() || undefined,
+        phone1: transfer.phone1.trim(),
         phone2: transfer.phone2.trim() || undefined, phone3: transfer.phone3.trim() || undefined,
         transferToBranch: transfer.transferToBranch, reason: transfer.reason.trim(), screenshots
       });
@@ -376,6 +384,10 @@ export default function NewEntry() {
             <Field label="MID" required><input required value={transfer.mid} onChange={e => setTransfer(v => ({ ...v, mid: e.target.value }))} className={inputClass} /></Field>
             <Field label="Student name" required><input required value={transfer.studentName} onChange={e => setTransfer(v => ({ ...v, studentName: e.target.value }))} className={inputClass} /></Field>
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Field label="Batch Name"><input value={transfer.batchName} onChange={e => setTransfer(v => ({ ...v, batchName: e.target.value }))} className={inputClass} /></Field>
+            <Field label="Faculty Name"><input value={transfer.facultyName} onChange={e => setTransfer(v => ({ ...v, facultyName: e.target.value }))} className={inputClass} /></Field>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <Field label="Phone 1 (Student)" required><input {...phoneProps(transfer.phone1, true)} onChange={e => setTransfer(v => ({ ...v, phone1: e.target.value.replace(/\D/g, '').slice(0, 10) }))} className={inputClass} /></Field>
             <Field label="Phone 2 (Parent 1)" required><input {...phoneProps(transfer.phone2, true)} onChange={e => setTransfer(v => ({ ...v, phone2: e.target.value.replace(/\D/g, '').slice(0, 10) }))} className={inputClass} /></Field>
@@ -426,6 +438,11 @@ export default function NewEntry() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Field label="MID" required><input required value={workflow === 'discontinue' ? discontinue.mid : inactive.mid} onChange={e => workflow === 'discontinue' ? setDiscontinue(v => ({ ...v, mid: e.target.value })) : setInactive(v => ({ ...v, mid: e.target.value }))} className={inputClass} /></Field>
             <Field label="Student name" required><input required value={workflow === 'discontinue' ? discontinue.studentName : inactive.studentName} onChange={e => workflow === 'discontinue' ? setDiscontinue(v => ({ ...v, studentName: e.target.value })) : setInactive(v => ({ ...v, studentName: e.target.value }))} className={inputClass} /></Field>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Field label="Batch Name"><input value={workflow === 'discontinue' ? discontinue.batchName : inactive.batchName} onChange={e => workflow === 'discontinue' ? setDiscontinue(v => ({ ...v, batchName: e.target.value })) : setInactive(v => ({ ...v, batchName: e.target.value }))} className={inputClass} /></Field>
+            <Field label="Faculty Name"><input value={workflow === 'discontinue' ? discontinue.facultyName : inactive.facultyName} onChange={e => workflow === 'discontinue' ? setDiscontinue(v => ({ ...v, facultyName: e.target.value })) : setInactive(v => ({ ...v, facultyName: e.target.value }))} className={inputClass} /></Field>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -202,6 +202,8 @@ def submit_inactive_(user, payload):
     row = {
         'Sl No': _next_sl_no_(),
         'Branch': user['branch'],
+        'Batch Name': str(payload.get('batchName') or '').strip(),
+        'Faculty Name': str(payload.get('facultyName') or '').strip(),
         'MID': mid,
         'Student Name': student_name,
         'Phone Number 1': payload.get('phone1') or '',
@@ -262,6 +264,11 @@ def list_inactive_(user, completed=False, params=None):
 
     if params.get('branch') and user['role'] in config.GLOBAL_VISIBILITY_ROLES:
         rows = [r for r in rows if r.get('Branch') == params['branch']]
+
+    if params.get('batch'):
+        q = str(params['batch']).strip().lower()
+        if q:
+            rows = [r for r in rows if q in str(r.get('Batch Name', '')).lower()]
 
     if params.get('status'):
         rows = [r for r in rows if r.get('Status') == params['status']]

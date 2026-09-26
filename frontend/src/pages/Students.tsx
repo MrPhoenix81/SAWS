@@ -49,7 +49,7 @@ import {
   ApiError
 } from '@/lib/apiClient';
 import { useAuth } from '@/context/AuthContext';
-import { BranchFilter } from '@/components/ListControls';
+import { BranchFilter, BatchFilter } from '@/components/ListControls';
 import type { StudentEntry, StudentStatus } from '@/types';
 import { STATUS_LABELS } from '@/types';
 
@@ -182,6 +182,7 @@ export default function Students() {
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [branchFilter, setBranchFilter] = useState<string>('');
+  const [batchFilter, setBatchFilter] = useState<string>('');
   const [lastPresentFrom, setLastPresentFrom] = useState<string>('');
   const [lastPresentTo, setLastPresentTo] = useState<string>('');
   const [entryDateFrom, setEntryDateFrom] = useState<string>('');
@@ -193,6 +194,7 @@ export default function Students() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draftStatus, setDraftStatus] = useState('');
   const [draftBranch, setDraftBranch] = useState('');
+  const [draftBatch, setDraftBatch] = useState('');
   const [draftEntryDateFrom, setDraftEntryDateFrom] = useState('');
   const [draftEntryDateTo, setDraftEntryDateTo] = useState('');
   const [draftLastPresentFrom, setDraftLastPresentFrom] = useState('');
@@ -201,6 +203,7 @@ export default function Students() {
   function openFilters() {
     setDraftStatus(statusFilter);
     setDraftBranch(branchFilter);
+    setDraftBatch(batchFilter);
     setDraftEntryDateFrom(entryDateFrom);
     setDraftEntryDateTo(entryDateTo);
     setDraftLastPresentFrom(lastPresentFrom);
@@ -211,6 +214,7 @@ export default function Students() {
   function applyFilters() {
     setStatusFilter(draftStatus);
     setBranchFilter(draftBranch);
+    setBatchFilter(draftBatch);
     setEntryDateFrom(draftEntryDateFrom);
     setEntryDateTo(draftEntryDateTo);
     setLastPresentFrom(draftLastPresentFrom);
@@ -222,6 +226,7 @@ export default function Students() {
   function clearDraftFilters() {
     setDraftStatus('');
     setDraftBranch('');
+    setDraftBatch('');
     setDraftEntryDateFrom('');
     setDraftEntryDateTo('');
     setDraftLastPresentFrom('');
@@ -231,6 +236,7 @@ export default function Students() {
   const activeFilterCount = [
     statusFilter,
     branchFilter,
+    batchFilter,
     entryDateFrom,
     entryDateTo,
     lastPresentFrom,
@@ -336,6 +342,7 @@ export default function Students() {
       search: search || undefined,
       status: tab === 'response' ? statusFilter || undefined : undefined,
       branch: branchFilter || undefined,
+      batch: batchFilter || undefined,
       // Two distinct date ranges - when the entry was created vs. when
       // the student was last actually present. See StudentListParams.
       // Status and date filters exist only on the Active tab's Filters panel.
@@ -353,6 +360,7 @@ export default function Students() {
       search,
       statusFilter,
       branchFilter,
+      batchFilter,
       entryDateFrom,
       entryDateTo,
       lastPresentFrom,
@@ -422,6 +430,7 @@ export default function Students() {
         search: search || undefined,
         status: tab === 'response' ? statusFilter || undefined : undefined,
         branch: branchFilter || undefined,
+        batch: batchFilter || undefined,
         entryDateFrom: tab === 'response' ? entryDateFrom || undefined : undefined,
         entryDateTo: tab === 'response' ? entryDateTo || undefined : undefined,
         lastPresentFrom: tab === 'response' ? lastPresentFrom || undefined : undefined,
@@ -569,12 +578,23 @@ export default function Students() {
           />
         )}
 
-        {(search || (tab === 'response' ? activeFilterCount > 0 : !!branchFilter)) && (
+        {tab === 'completed' && hasFullVisibility && (
+          <BatchFilter
+            value={batchFilter}
+            onChange={(b) => {
+              setBatchFilter(b);
+              setPage(1);
+            }}
+          />
+        )}
+
+        {(search || (tab === 'response' ? activeFilterCount > 0 : !!branchFilter || !!batchFilter)) && (
           <button
             onClick={() => {
               setSearch('');
               setStatusFilter('');
               setBranchFilter('');
+              setBatchFilter('');
               setEntryDateFrom('');
               setEntryDateTo('');
               setLastPresentFrom('');
@@ -651,6 +671,19 @@ export default function Students() {
                     </option>
                   ))}
                 </select>
+              </div>
+            )}
+
+            {hasFullVisibility && (
+              <div>
+                <label className="block text-xs font-medium text-ink-700/70 mb-1.5">Batch Name</label>
+                <input
+                  type="text"
+                  value={draftBatch}
+                  onChange={(e) => setDraftBatch(e.target.value)}
+                  placeholder="Filter by batch name"
+                  className="w-full rounded-md border border-ink-200 px-3 py-2 text-sm bg-white placeholder:text-ink-700/40 focus:outline-none focus:ring-2 focus:ring-ink-900"
+                />
               </div>
             )}
 
@@ -741,12 +774,12 @@ export default function Students() {
                 <SortableTh label="MID" sortKey="MID" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
               )}
               <SortableTh label="Student" sortKey="Student Name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+              <SortableTh label="Branch" sortKey="Branch" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
               {user?.role === 'Head Office' && (
-                <SortableTh label="Branch" sortKey="Branch" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                <SortableTh label="Batch Name" sortKey="Batch Name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
               )}
               <th className="px-4 py-3 font-medium">Phone numbers</th>
               <SortableTh label="Status" sortKey="Status" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
-              <th className="px-4 py-3 font-medium">{reasonColumnLabel(user?.role)}</th>
               <th className="px-4 py-3 font-medium text-right">Actions</th>
             </tr>
           </thead>
@@ -772,7 +805,7 @@ export default function Students() {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-5 py-8 text-center text-ink-700/50 text-sm">
+                <td colSpan={9} className="px-5 py-8 text-center text-ink-700/50 text-sm">
                   {emptyMessage}
                 </td>
               </tr>
@@ -1233,6 +1266,8 @@ function StudentDetailsModal({
               <div><dt className="inline text-ink-700/50">MID:</dt> <dd className="inline font-mono">{row.MID || '—'}</dd></div>
               <div><dt className="inline text-ink-700/50">Name:</dt> <dd className="inline">{row['Student Name'] || '—'}</dd></div>
               {hasFullView && <div><dt className="inline text-ink-700/50">Branch:</dt> <dd className="inline">{row.Branch || '—'}</dd></div>}
+              {hasFullView && <div><dt className="inline text-ink-700/50">Batch Name:</dt> <dd className="inline">{row['Batch Name'] || '—'}</dd></div>}
+              {hasFullView && <div><dt className="inline text-ink-700/50">Faculty Name:</dt> <dd className="inline">{row['Faculty Name'] || '—'}</dd></div>}
               <div><dt className="inline text-ink-700/50">Status:</dt> <dd className="inline">{statusDisplay(row)}</dd></div>
             </dl>
           </div>
@@ -1389,6 +1424,8 @@ function StudentExpandedDetails({
               <div><dt className="inline text-ink-700/50">MID:</dt> <dd className="inline font-mono">{row.MID || '—'}</dd></div>
               <div><dt className="inline text-ink-700/50">Name:</dt> <dd className="inline">{row['Student Name'] || '—'}</dd></div>
               {hasFullView && <div><dt className="inline text-ink-700/50">Branch:</dt> <dd className="inline">{row.Branch || '—'}</dd></div>}
+              {hasFullView && <div><dt className="inline text-ink-700/50">Batch Name:</dt> <dd className="inline">{row['Batch Name'] || '—'}</dd></div>}
+              {hasFullView && <div><dt className="inline text-ink-700/50">Faculty Name:</dt> <dd className="inline">{row['Faculty Name'] || '—'}</dd></div>}
               <div><dt className="inline text-ink-700/50">Status:</dt> <dd className="inline">{statusDisplay(row)}</dd></div>
             </dl>
           </div>
@@ -1503,12 +1540,7 @@ function StudentRow({
   onShowDetails: () => void; onFillReason: (role: 'SCM' | 'HOF' | 'Manager') => void; onReject: () => void; onEditFull: () => void; onDelete: () => void; onEditDetails: () => void;
 }) {
   const { user } = useAuth();
-  const { hasFullView, status, phones, reasonText, adminReasons, scmCanAct, hofCanAct, managerCanAct } = computeStudentRowState(row, isAdmin, isHeadOffice, sheet, user?.role);
-  // SCM/HOF/Manager only see their own reason while they can still act on it
-  // (not yet submitted, or sent back to them for correction). Once it's
-  // submitted and out of their hands, it's hidden from them — only Admin
-  // and Head Office retain full visibility.
-  const canSeeOwnReason = scmCanAct || hofCanAct || managerCanAct;
+  const { status, phones } = computeStudentRowState(row, isAdmin, isHeadOffice, sheet, user?.role);
   // Admin/Head Office now see records at every stage, not just the one
   // they can act on - this keeps "needs your decision" visually distinct
   // from "someone else's status" instead of hiding the latter entirely.
@@ -1523,7 +1555,8 @@ function StudentRow({
       <td className="px-4 py-3 text-ink-700/50">{serial}</td>
       {showsBillingColumns(user?.role) && <td className="px-4 py-3 font-mono text-xs">{row.MID}</td>}
       <td className="px-4 py-3 font-medium">{row['Student Name']}</td>
-      {isHeadOffice && <td className="px-4 py-3 text-ink-700/70">{row.Branch || '—'}</td>}
+      <td className="px-4 py-3 text-ink-700/70">{row.Branch || '—'}</td>
+      {isHeadOffice && <td className="px-4 py-3 text-ink-700/70">{row['Batch Name'] || '—'}</td>}
       <td className="px-4 py-3 text-ink-700/70">{phones.length ? phones.map((p, i) => <div key={i} className="font-mono text-xs">{p}</div>) : <span className="text-ink-700/30 italic">—</span>}</td>
       <td className="px-4 py-3">
         <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs ${STATUS_STYLES[status]}`}>{statusDisplay(row)}</span>
@@ -1532,11 +1565,6 @@ function StudentRow({
             Needs your decision
           </span>
         )}
-      </td>
-      <td className="px-4 py-3 text-ink-700/70 max-w-xs">
-        {hasFullView
-          ? <div className="truncate text-xs">{adminReasons.map((r) => r.value).find(Boolean) || 'Not yet provided'}</div>
-          : <div className="truncate text-xs">{canSeeOwnReason ? (reasonText || 'Not yet provided') : <span className="text-ink-700/40 italic">Submitted</span>}</div>}
       </td>
       <td className="px-4 py-3 text-right text-ink-700/40">→</td>
     </tr>
@@ -1795,7 +1823,7 @@ function ImageZoomModal({ urls, initialIndex = 0, onClose }: { urls: string[]; i
   }
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/85 flex flex-col" onClick={onClose}>
+    <div className="fixed inset-0 z-[100] bg-black/85 flex flex-col">
       <div
         className="flex items-center justify-end gap-2 px-4 py-3"
         onClick={(e) => e.stopPropagation()}
@@ -2529,23 +2557,29 @@ function ModalShell({
   onClose: () => void;
   wide?: boolean;
 }) {
+  // Closing is via the X button only (see header below) - clicking the
+  // backdrop no longer closes the popup, since that was misfiring when a
+  // user resized/stretched the popup and their pointer ended up outside it.
   return (
-    <div
-      className="fixed inset-0 z-20 flex items-center justify-center bg-ink-950/40 px-4 py-8 overflow-y-auto"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-ink-950/40 px-4 py-8 overflow-y-auto">
       <div
-        onClick={(e) => e.stopPropagation()}
-        className="relative w-full bg-white rounded-lg shadow-panel border border-ink-100 p-6 my-auto resize overflow-auto max-w-[95vw] max-h-[90vh] min-w-[300px] min-h-[160px]"
+        className="relative w-full flex flex-col bg-white rounded-lg shadow-panel border border-ink-100 my-auto resize overflow-hidden max-w-[95vw] max-h-[90vh] min-w-[300px] min-h-[160px]"
         style={{ width: wide ? 'min(42rem, 95vw)' : 'min(28rem, 95vw)' }}
       >
-        <button
-          onClick={onClose}
-          className="absolute right-4 top-4 text-ink-700/40 hover:text-ink-700 transition-colors"
-        >
-          <X size={18} />
-        </button>
-        {children}
+        {/* Header sits outside the scrollable body below, so the close
+            button never scrolls out of view and never shifts. */}
+        <div className="flex justify-end px-4 pt-3 pb-1 shrink-0">
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="rounded-md p-1 text-ink-700/40 hover:text-ink-700 hover:bg-paper transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1 min-h-0 px-6 pb-6 -mt-2">
+          {children}
+        </div>
       </div>
     </div>
   );

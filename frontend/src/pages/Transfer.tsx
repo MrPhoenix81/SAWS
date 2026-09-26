@@ -7,6 +7,7 @@ import { useAuth } from '@/context/AuthContext';
 import {
   ALL_ROWS_PAGE_SIZE,
   BranchFilter,
+  BatchFilter,
   DownloadMenu,
   ListFooter,
   SortableTh,
@@ -40,10 +41,14 @@ function errorText(e: unknown, fallback: string) {
   return fallback;
 }
 function Modal({title,children,onClose}:{title:string;children:React.ReactNode;onClose:()=>void}) {
-  return <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4" onClick={onClose}>
-    <div className="w-full max-w-[95vw] max-h-[90vh] min-w-[300px] min-h-[160px] overflow-auto resize rounded-lg bg-white border border-ink-100 shadow-panel" style={{width:'36rem'}} onClick={(e)=>e.stopPropagation()}>
-      <div className="flex items-center justify-between px-5 py-4 border-b border-ink-100"><h2 className="font-display text-lg">{title}</h2><button onClick={onClose} className="p-1.5 rounded-md hover:bg-paper"><X size={18}/></button></div>
-      {children}
+  // Closing is via the X button only - the backdrop never closes this
+  // popup, since that was misfiring when a user resized/stretched it.
+  return <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
+    <div className="w-full max-w-[95vw] max-h-[90vh] min-w-[300px] min-h-[160px] resize overflow-hidden rounded-lg bg-white border border-ink-100 shadow-panel flex flex-col" style={{width:'36rem'}}>
+      <div className="flex items-center justify-between px-5 py-4 border-b border-ink-100 shrink-0"><h2 className="font-display text-lg">{title}</h2><button onClick={onClose} className="p-1.5 rounded-md hover:bg-paper"><X size={18}/></button></div>
+      <div className="overflow-y-auto flex-1 min-h-0">
+        {children}
+      </div>
     </div>
   </div>;
 }
@@ -93,7 +98,7 @@ function ImagePreviewModal({ urls, initialIndex = 0, onClose }: { urls: string[]
   function stopDrag() { dragState.current = null; setDragging(false); }
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/85 flex flex-col" onClick={onClose}>
+    <div className="fixed inset-0 z-[100] bg-black/85 flex flex-col">
       <div className="flex items-center justify-end gap-2 px-4 py-3" onClick={(e) => e.stopPropagation()}>
         {urls.length > 1 && <span className="text-white/70 text-xs mr-2">{index + 1} / {urls.length}</span>}
         <button type="button" onClick={() => setScale((s) => clampScale(s - 0.25))} className="rounded-md bg-white/90 hover:bg-white px-2.5 py-1.5 text-sm font-medium">−</button>
@@ -200,14 +205,19 @@ function TransferReasonBox({ value, defaultOpen }: { value?: string; defaultOpen
 }
 
 function ModalShell({children,onClose}:{children:React.ReactNode;onClose:()=>void}) {
-  return <div className="fixed inset-0 z-20 flex items-center justify-center bg-ink-950/40 px-4 py-8 overflow-y-auto" onClick={onClose}>
+  // Closing is via the X button only - the backdrop never closes this
+  // popup, since that was misfiring when a user resized/stretched it.
+  return <div className="fixed inset-0 z-20 flex items-center justify-center bg-ink-950/40 px-4 py-8 overflow-y-auto">
     <div
-      className="relative w-full bg-white rounded-lg shadow-panel border border-ink-100 p-6 my-auto resize overflow-auto max-w-[95vw] max-h-[90vh] min-w-[300px] min-h-[160px]"
+      className="relative w-full flex flex-col bg-white rounded-lg shadow-panel border border-ink-100 my-auto resize overflow-hidden max-w-[95vw] max-h-[90vh] min-w-[300px] min-h-[160px]"
       style={{ width: 'min(42rem, 95vw)' }}
-      onClick={(e)=>e.stopPropagation()}
     >
-      <button onClick={onClose} className="absolute right-4 top-4 text-ink-700/40 hover:text-ink-700 transition-colors"><X size={18}/></button>
-      {children}
+      <div className="flex justify-end px-4 pt-3 pb-1 shrink-0">
+        <button onClick={onClose} aria-label="Close" className="rounded-md p-1 text-ink-700/40 hover:text-ink-700 hover:bg-paper transition-colors"><X size={18}/></button>
+      </div>
+      <div className="overflow-y-auto flex-1 min-h-0 px-6 pb-6 -mt-2">
+        {children}
+      </div>
     </div>
   </div>;
 }
@@ -234,6 +244,8 @@ function TransferDetailsModal({
             <p><span className="text-ink-700/50">MID:</span> <span className="font-mono">{row.MID}</span></p>
             <p><span className="text-ink-700/50">Name:</span> {row['Student Name']}</p>
             <p><span className="text-ink-700/50">From branch:</span> {row.Branch}</p>
+            <p><span className="text-ink-700/50">Batch Name:</span> {row['Batch Name'] || '—'}</p>
+            <p><span className="text-ink-700/50">Faculty Name:</span> {row['Faculty Name'] || '—'}</p>
             <p><span className="text-ink-700/50">Transfer to:</span> {row['Transfer To Branch']}</p>
             <p><span className="text-ink-700/50">Status:</span> {TRANSFER_STATUS_LABELS[row.Status]||row.Status}</p>
           </div>
@@ -287,7 +299,7 @@ function TransferDetailsModal({
 export default function Transfer() {
   const {user}=useAuth(); const qc=useQueryClient(); const [sp,setSp]=useSearchParams();
   const [tab,setTab]=useState<'active'|'completed'>(sp.get('tab')==='completed'?'completed':'active');
-  const [search,setSearch]=useState(sp.get('search')||''); const [branchFilter,setBranchFilter]=useState('');
+  const [search,setSearch]=useState(sp.get('search')||''); const [branchFilter,setBranchFilter]=useState(''); const [batchFilter,setBatchFilter]=useState('');
   const [page,setPage]=useState(1); const [pageSize,setPageSize]=useState<PageSizeOption>(15);
   const effectivePageSize=pageSize==='all'?ALL_ROWS_PAGE_SIZE:pageSize;
   const [sortBy,setSortBy]=useState(''); const [sortDir,setSortDir]=useState<'asc'|'desc'>('asc');
@@ -299,7 +311,7 @@ export default function Transfer() {
   React.useEffect(()=>{const t=sp.get('tab')==='completed'?'completed':'active';if(t!==tab){setTab(t);setPage(1)} const q=sp.get('search')||'';if(q!==search){setSearch(q);setPage(1)}},[sp]); // eslint-disable-line react-hooks/exhaustive-deps
   // Item 7: opening Transfer clears its sidebar "unseen" badge.
   React.useEffect(()=>{markPageSeen('transfer').then(()=>qc.invalidateQueries({queryKey:['activeCounts']})).catch(()=>{})},[]); // eslint-disable-line react-hooks/exhaustive-deps
-  const params=useMemo(()=>({search:search.trim()||undefined,branch:branchFilter||undefined,sortBy:sortBy||undefined,sortDir:sortBy?sortDir:undefined,page,pageSize:effectivePageSize}),[search,branchFilter,sortBy,sortDir,page,effectivePageSize]);
+  const params=useMemo(()=>({search:search.trim()||undefined,branch:branchFilter||undefined,batch:batchFilter||undefined,sortBy:sortBy||undefined,sortDir:sortBy?sortDir:undefined,page,pageSize:effectivePageSize}),[search,branchFilter,batchFilter,sortBy,sortDir,page,effectivePageSize]);
   const showBranch=user?.role==='Head Office'; // Head Office sees every branch, so show which one each row belongs to
   const branchesQuery=useQuery({queryKey:['branches'],queryFn:listBranches,enabled:user?.role==='Admin'||user?.role==='Head Office'});
   const query=useQuery({queryKey:['transfer',tab,params],queryFn:()=>listTransfer(tab==='completed'?'completed':'response',params),enabled:!!user});
@@ -322,7 +334,7 @@ export default function Transfer() {
     if(!canExport) return; setExporting(true); setError(null);
     try {
       const all:TransferEntry[]=[]; let pg=1; let totalRows=0;
-      do { const r=await listTransfer(tab==='completed'?'completed':'response',{search:search.trim()||undefined,branch:branchFilter||undefined,page:pg,pageSize:200}); all.push(...r.rows); totalRows=r.total; pg++; if(!r.rows.length)break; } while(all.length<totalRows);
+      do { const r=await listTransfer(tab==='completed'?'completed':'response',{search:search.trim()||undefined,branch:branchFilter||undefined,batch:batchFilter||undefined,page:pg,pageSize:200}); all.push(...r.rows); totalRows=r.total; pg++; if(!r.rows.length)break; } while(all.length<totalRows);
       if(!all.length){setError('There are no records to download for the current filters.');return;}
       const out=all.map(r=>({'Sl No':r['Sl No'],Branch:r.Branch,MID:r.MID,'Student Name':r['Student Name'],'Phone Number 1':r['Phone Number 1'],'Phone Number 2':r['Phone Number 2']||'','Phone Number 3':r['Phone Number 3']||'','Transfer To Branch':r['Transfer To Branch'],Reason:r.Reason,Status:TRANSFER_STATUS_LABELS[r.Status]||r.Status,'Entry Date':r['Entry Date']||'','Head Office Decision':r['Head Office Decision']||'','Head Office Name':r['Head Office Name']||'','Head Office Date':r['Head Office Date']||'','Admin Approval':r['Admin Approval']||'','Admin Name':r['Admin Name']||'','Approval Date':r['Approval Date']||'','Last Rejection Reason':r['Last Rejection Reason']||'','Last Rejected By':r['Last Rejected By']||'','Last Rejected Stage':r['Last Rejected Stage']||'','Last Rejected Date':r['Last Rejected Date']||''}));
       const base=`transfer_${tab==='completed'?'approved':'active'}_${new Date().toISOString().slice(0,10)}`;
@@ -372,9 +384,16 @@ export default function Transfer() {
         />
       )}
 
-      {(search || branchFilter) && (
+      {canExport && (
+        <BatchFilter
+          value={batchFilter}
+          onChange={(b)=>{setBatchFilter(b);setPage(1)}}
+        />
+      )}
+
+      {(search || branchFilter || batchFilter) && (
         <button
-          onClick={()=>{setSearch('');setBranchFilter('');setPage(1);const n=new URLSearchParams(sp);n.delete('search');setSp(n,{replace:true})}}
+          onClick={()=>{setSearch('');setBranchFilter('');setBatchFilter('');setPage(1);const n=new URLSearchParams(sp);n.delete('search');setSp(n,{replace:true})}}
           className="flex items-center gap-1 text-sm text-ink-700/50 hover:text-ink-700 transition-colors px-1"
         >
           <X size={13} />
@@ -401,10 +420,11 @@ export default function Transfer() {
             <th className="px-4 py-3 font-medium">#</th>
             <SortableTh label="MID" sortKey="MID" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
             <SortableTh label="Student" sortKey="Student Name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
-            {showBranch && <SortableTh label="Branch" sortKey="Branch" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />}
+            <SortableTh label="Branch" sortKey="Branch" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+            {showBranch && <SortableTh label="Batch Name" sortKey="Batch Name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />}
             <th className="px-4 py-3 font-medium">Phone numbers</th>
             <SortableTh label="Status" sortKey="Status" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
-            <th className="px-4 py-3 font-medium">Reason</th>
+            <th className="px-4 py-3 font-medium" aria-hidden="true"></th>
             <th className="px-4 py-3 font-medium text-right">Actions</th>
           </tr>
         </thead>
@@ -424,7 +444,8 @@ export default function Transfer() {
                 <td className="px-4 py-3 text-ink-700/50">{(page-1)*effectivePageSize+i+1}</td>
                 <td className="px-4 py-3 font-mono text-xs">{r.MID}</td>
                 <td className="px-4 py-3 font-medium">{r['Student Name']}</td>
-                {showBranch && <td className="px-4 py-3 text-ink-700/70">{r.Branch||'—'}</td>}
+                <td className="px-4 py-3 text-ink-700/70">{r.Branch||'—'}</td>
+                {showBranch && <td className="px-4 py-3 text-ink-700/70">{r['Batch Name']||'—'}</td>}
                 <td className="px-4 py-3 text-ink-700/70">
                   {phones.length
                     ? phones.map((p,j)=><div key={j} className="font-mono text-xs">{p}</div>)
@@ -438,12 +459,9 @@ export default function Transfer() {
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-3 text-ink-700/70 max-w-xs">
-                  <div className="flex items-center gap-1.5">
-                    <div className="truncate text-xs">{r.Reason||'Not yet provided'}</div>
-                    {(user?.role==='Admin'||user?.role==='Head Office') && r['Screenshot Uploaded'] &&
-                      <span onClick={(e)=>e.stopPropagation()}><ViewAttachmentButtonIcon mid={r.MID} sheet={tab==='completed'?'completed':'response'}/></span>}
-                  </div>
+                <td className="px-4 py-3 text-ink-700/70">
+                  {(user?.role==='Admin'||user?.role==='Head Office') && r['Screenshot Uploaded'] &&
+                    <span onClick={(e)=>e.stopPropagation()}><ViewAttachmentButtonIcon mid={r.MID} sheet={tab==='completed'?'completed':'response'}/></span>}
                 </td>
                 <td className="px-4 py-3 text-right text-ink-700/40">→</td>
               </tr>

@@ -119,6 +119,46 @@ export function BranchFilter({
 }
 
 /**
+ * Batch Name filter - a simple text-match input (Batch Name isn't a fixed,
+ * enumerable list the way branches are, so this mirrors BranchFilter's
+ * placement/styling but as free text rather than a dropdown).
+ */
+export function BatchFilter({
+  value,
+  onChange
+}: {
+  value: string;
+  onChange: (batch: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  function commit() {
+    if (draft !== value) onChange(draft.trim());
+  }
+
+  return (
+    <input
+      type="text"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        }
+      }}
+      placeholder="Filter by batch name"
+      className="w-56 rounded-md border border-ink-200 bg-white px-4 py-2 text-sm text-ink-700/80 placeholder:text-ink-700/40 focus:outline-none focus:ring-2 focus:ring-ink-900 transition-colors"
+    />
+  );
+}
+
+/**
  * Clickable, sortable column header. Cycles asc -> desc -> unsorted on
  * repeated clicks; shows a neutral icon when this column isn't the active sort.
  */

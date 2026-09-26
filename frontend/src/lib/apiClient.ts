@@ -462,6 +462,8 @@ export async function adminUpdateStudent(
 export interface InactiveListParams {
   search?: string;
   branch?: string;
+  /** Simple text-match filter on 'Batch Name'. */
+  batch?: string;
   page?: number;
   pageSize?: number;
 }
@@ -469,6 +471,8 @@ export interface InactiveListParams {
 export interface InactiveSubmitPayload {
   mid: string;
   studentName: string;
+  batchName?: string;
+  facultyName?: string;
   phone1: string;
   phone2?: string;
   phone3?: string;

@@ -40,6 +40,7 @@ import { useAuth } from '@/context/AuthContext';
 import {
   ALL_ROWS_PAGE_SIZE,
   BranchFilter,
+  BatchFilter,
   DownloadMenu,
   ListFooter,
   SortableTh,
@@ -121,19 +122,23 @@ function Modal({
   onClose: () => void;
   width?: string;
 }) {
+  // Closing is via the X button only - the backdrop never closes this
+  // popup, since that was misfiring when a user resized/stretched it.
   return (
     <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
       <div
-        className="w-full max-w-[95vw] max-h-[90vh] min-w-[300px] min-h-[160px] overflow-auto resize rounded-lg bg-white border border-ink-100 shadow-panel"
+        className="w-full max-w-[95vw] max-h-[90vh] min-w-[300px] min-h-[160px] resize overflow-hidden rounded-lg bg-white border border-ink-100 shadow-panel flex flex-col"
         style={{ width }}
       >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-ink-100">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-ink-100 shrink-0">
           <h2 className="font-display text-lg">{title}</h2>
           <button onClick={onClose} className="p-1.5 rounded-md hover:bg-paper">
             <X size={18} />
           </button>
         </div>
-        {children}
+        <div className="overflow-y-auto flex-1 min-h-0">
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -226,17 +231,22 @@ function Form({
 
 
 function ModalShell({children,onClose}:{children:React.ReactNode;onClose:()=>void}) {
+  // Closing is via the X button only - the backdrop never closes this
+  // popup, since that was misfiring when a user resized/stretched it.
   return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-ink-950/40 px-4 py-8 overflow-y-auto" onClick={onClose}>
+    <div className="fixed inset-0 z-20 flex items-center justify-center bg-ink-950/40 px-4 py-8 overflow-y-auto">
       <div
-        className="relative w-full bg-white rounded-lg shadow-panel border border-ink-100 p-6 my-auto resize overflow-auto max-w-[95vw] max-h-[90vh] min-w-[300px] min-h-[160px]"
+        className="relative w-full flex flex-col bg-white rounded-lg shadow-panel border border-ink-100 my-auto resize overflow-hidden max-w-[95vw] max-h-[90vh] min-w-[300px] min-h-[160px]"
         style={{ width: 'min(42rem, 95vw)' }}
-        onClick={(e) => e.stopPropagation()}
       >
-        <button onClick={onClose} className="absolute right-4 top-4 text-ink-700/40 hover:text-ink-700 transition-colors">
-          <X size={18} />
-        </button>
-        {children}
+        <div className="flex justify-end px-4 pt-3 pb-1 shrink-0">
+          <button onClick={onClose} aria-label="Close" className="rounded-md p-1 text-ink-700/40 hover:text-ink-700 hover:bg-paper transition-colors">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1 min-h-0 px-6 pb-6 -mt-2">
+          {children}
+        </div>
       </div>
     </div>
   );
@@ -283,7 +293,7 @@ function ImagePreviewModal({ urls, initialIndex = 0, onClose }: { urls: string[]
   function stopDrag() { dragState.current = null; setDragging(false); }
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/85 flex flex-col" onClick={onClose}>
+    <div className="fixed inset-0 z-[100] bg-black/85 flex flex-col">
       <div className="flex items-center justify-end gap-2 px-4 py-3" onClick={(e) => e.stopPropagation()}>
         {urls.length > 1 && <span className="text-white/70 text-xs mr-2">{index + 1} / {urls.length}</span>}
         <button type="button" onClick={() => setScale((s) => clampScale(s - 0.25))} className="rounded-md bg-white/90 hover:bg-white px-2.5 py-1.5 text-sm font-medium">−</button>
@@ -412,6 +422,8 @@ function InactiveDetailsModal({
               <p><span className="text-ink-700/50">MID:</span> <span className="font-mono">{row.MID}</span></p>
               <p><span className="text-ink-700/50">Name:</span> {row['Student Name']}</p>
               <p><span className="text-ink-700/50">Branch:</span> {row.Branch}</p>
+              <p><span className="text-ink-700/50">Batch Name:</span> {row['Batch Name'] || '—'}</p>
+              <p><span className="text-ink-700/50">Faculty Name:</span> {row['Faculty Name'] || '—'}</p>
               <p><span className="text-ink-700/50">Status:</span> {INACTIVE_STATUS_LABELS[row.Status] || row.Status}</p>
             </div>
           </div>
@@ -481,6 +493,7 @@ export default function Inactive() {
   );
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [branchFilter, setBranchFilter] = useState('');
+  const [batchFilter, setBatchFilter] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSizeOption>(15);
   const effectivePageSize = pageSize === 'all' ? ALL_ROWS_PAGE_SIZE : pageSize;
@@ -548,12 +561,13 @@ export default function Inactive() {
     () => ({
       search: search.trim() || undefined,
       branch: branchFilter || undefined,
+      batch: batchFilter || undefined,
       sortBy: sortBy || undefined,
       sortDir: sortBy ? sortDir : undefined,
       page,
       pageSize: effectivePageSize
     }),
-    [search, branchFilter, sortBy, sortDir, page, effectivePageSize]
+    [search, branchFilter, batchFilter, sortBy, sortDir, page, effectivePageSize]
   );
 
   const listQuery = useQuery({
@@ -684,6 +698,7 @@ export default function Inactive() {
         const result = await listInactive(source, {
           search: search.trim() || undefined,
           branch: branchFilter || undefined,
+          batch: batchFilter || undefined,
           page: exportPage,
           pageSize: 200
         });
@@ -814,11 +829,22 @@ export default function Inactive() {
           />
         )}
 
-        {(search || branchFilter) && (
+        {canExport && (
+          <BatchFilter
+            value={batchFilter}
+            onChange={(b) => {
+              setBatchFilter(b);
+              setPage(1);
+            }}
+          />
+        )}
+
+        {(search || branchFilter || batchFilter) && (
           <button
             onClick={() => {
               setSearch('');
               setBranchFilter('');
+              setBatchFilter('');
               setPage(1);
               const next = new URLSearchParams(searchParams);
               next.delete('search');
@@ -855,12 +881,13 @@ export default function Inactive() {
               <th className="px-4 py-3 font-medium">#</th>
               <SortableTh label="MID" sortKey="MID" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
               <SortableTh label="Student" sortKey="Student Name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+              <SortableTh label="Branch" sortKey="Branch" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
               {showBranch && (
-                <SortableTh label="Branch" sortKey="Branch" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                <SortableTh label="Batch Name" sortKey="Batch Name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
               )}
               <th className="px-4 py-3 font-medium">Phone numbers</th>
               <SortableTh label="Status" sortKey="Status" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
-              <th className="px-4 py-3 font-medium">Reason</th>
+              <th className="px-4 py-3 font-medium" aria-hidden="true"></th>
               <th className="px-4 py-3 font-medium text-right">Actions</th>
             </tr>
           </thead>
@@ -882,7 +909,8 @@ export default function Inactive() {
                   <td className="px-4 py-3 text-ink-700/50">{(page - 1) * effectivePageSize + index + 1}</td>
                   <td className="px-4 py-3 font-mono text-xs">{row.MID}</td>
                   <td className="px-4 py-3 font-medium">{row['Student Name']}</td>
-                  {showBranch && <td className="px-4 py-3 text-ink-700/70">{row.Branch || '—'}</td>}
+                  <td className="px-4 py-3 text-ink-700/70">{row.Branch || '—'}</td>
+                  {showBranch && <td className="px-4 py-3 text-ink-700/70">{row['Batch Name'] || '—'}</td>}
                   <td className="px-4 py-3 text-ink-700/70">
                     {phones.length
                       ? phones.map((p, j) => <div key={j} className="font-mono text-xs">{p}</div>)
@@ -898,15 +926,12 @@ export default function Inactive() {
                       </span>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-ink-700/70 max-w-xs">
-                    <div className="flex items-center gap-1.5">
-                      <div className="truncate text-xs">{row.Reason || 'Not yet provided'}</div>
-                      {(user?.role === 'Admin' || user?.role === 'Head Office') && row['Screenshot Uploaded'] && (
-                        <span onClick={(e) => e.stopPropagation()}>
-                          <ViewAttachmentButtonIcon mid={row.MID} sheet={tab === 'completed' ? 'completed' : 'response'} />
-                        </span>
-                      )}
-                    </div>
+                  <td className="px-4 py-3 text-ink-700/70">
+                    {(user?.role === 'Admin' || user?.role === 'Head Office') && row['Screenshot Uploaded'] && (
+                      <span onClick={(e) => e.stopPropagation()}>
+                        <ViewAttachmentButtonIcon mid={row.MID} sheet={tab === 'completed' ? 'completed' : 'response'} />
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right text-ink-700/40">→</td>
                 </tr>

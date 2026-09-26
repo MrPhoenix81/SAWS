@@ -217,7 +217,7 @@ NOTIF_REJECTED = 'REJECTED'
 
 # ---- Students/Completed column order ----
 STUDENT_COLUMNS = [
-    'Sl No', 'Branch', 'MID', 'Student Name',
+    'Sl No', 'Branch', 'Batch Name', 'Faculty Name', 'MID', 'Student Name',
     'Phone Number 1', 'Phone Number 2', 'Phone Number 3',
     'Status', 'Total Billed', 'Total Paid', 'Arrear',
     'Last Present Day', 'Days Since Present',
@@ -236,7 +236,7 @@ STUDENT_COLUMNS = [
 ]
 
 TRANSFER_COLUMNS = [
-    'Sl No', 'Branch', 'MID', 'Student Name',
+    'Sl No', 'Branch', 'Batch Name', 'Faculty Name', 'MID', 'Student Name',
     'Phone Number 1', 'Phone Number 2', 'Phone Number 3',
     'Transfer To Branch', 'Reason', SCREENSHOT_FIELD_TRANSFER,
     'Status', 'Entry Date',
@@ -246,7 +246,7 @@ TRANSFER_COLUMNS = [
 ]
 
 INACTIVE_COLUMNS = [
-    'Sl No', 'Branch', 'MID', 'Student Name',
+    'Sl No', 'Branch', 'Batch Name', 'Faculty Name', 'MID', 'Student Name',
     'Phone Number 1', 'Phone Number 2', 'Phone Number 3',
     'Last Present Day', 'Reason', SCREENSHOT_FIELD_INACTIVE,
     'Status', 'Entry Date',

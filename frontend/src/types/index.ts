@@ -34,6 +34,8 @@ export type CorrectableRole = 'SCM' | 'HOF' | 'Manager';
 export interface StudentEntry {
   'Sl No': number;
   Branch: string;
+  'Batch Name'?: string;
+  'Faculty Name'?: string;
   MID: string;
   'Student Name': string;
   'Phone Number 1': string;
@@ -202,6 +204,8 @@ export interface StudentListParams {
   search?: string;
   status?: string;
   branch?: string;
+  /** Simple text-match filter on 'Batch Name'. */
+  batch?: string;
   /** Filters on 'Entry Date' - when the entry was first created (age of the entry). */
   entryDateFrom?: string;
   entryDateTo?: string;
@@ -224,6 +228,8 @@ export interface SubmitStudentPayload {
   branch?: string; // only used/allowed when the caller is Admin
   mid: string;
   studentName: string;
+  batchName?: string;
+  facultyName?: string;
   phone1: string;
   phone2?: string;
   phone3?: string;
@@ -307,6 +313,8 @@ export const INACTIVE_STATUS_LABELS: Record<InactiveStatus, string> = {
 export interface InactiveEntry {
   'Sl No': number;
   Branch: string;
+  'Batch Name'?: string;
+  'Faculty Name'?: string;
   MID: string;
   'Student Name': string;
   'Phone Number 1': string;
@@ -359,7 +367,7 @@ export const TRANSFER_STATUS_LABELS: Record<TransferStatus, string> = {
   TRANSFER_APPROVED: 'Transferred'
 };
 export interface TransferEntry {
-  'Sl No': number; Branch: string; MID: string; 'Student Name': string;
+  'Sl No': number; Branch: string; 'Batch Name'?: string; 'Faculty Name'?: string; MID: string; 'Student Name': string;
   'Phone Number 1': string; 'Phone Number 2'?: string; 'Phone Number 3'?: string;
   'Transfer To Branch': string; Reason: string; Status: TransferStatus;
   'Screenshot Uploaded'?: boolean;
@@ -372,5 +380,5 @@ export interface TransferEntry {
   canHeadOfficeApprove?: boolean; canHeadOfficeReject?: boolean; canAdminApprove?: boolean; canAdminReject?: boolean; canDelete?: boolean; canAdminEdit?: boolean;
 }
 export interface TransferListResult { total: number; page: number; pageSize: number; rows: TransferEntry[]; pendingForMe?: number; }
-export interface TransferSubmitPayload { mid: string; studentName: string; phone1: string; phone2?: string; phone3?: string; transferToBranch: string; reason: string; screenshot?: ReasonScreenshot; screenshots?: ReasonScreenshot[]; }
+export interface TransferSubmitPayload { mid: string; studentName: string; batchName?: string; facultyName?: string; phone1: string; phone2?: string; phone3?: string; transferToBranch: string; reason: string; screenshot?: ReasonScreenshot; screenshots?: ReasonScreenshot[]; }
 export interface TransferEditFields { MID?: string; 'Student Name'?: string; 'Phone Number 1'?: string; 'Phone Number 2'?: string; 'Phone Number 3'?: string; 'Transfer To Branch'?: string; Reason?: string; }

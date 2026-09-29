@@ -347,7 +347,7 @@ export default function Transfer() {
   function openEdit(r:TransferEntry){setEditTarget(r);setForm(toForm(r));}
   function updateUrl(next:'active'|'completed'){setTab(next);setPage(1);const n=new URLSearchParams(sp);if(next==='completed')n.set('tab','completed');else n.delete('tab');setSp(n,{replace:true});}
 
-  return <div className="flex-1 min-h-0 flex flex-col gap-6">
+  return <div className="flex-1 min-h-0 flex flex-col gap-3">
     <div className="shrink-0 flex flex-wrap items-end justify-between gap-4">
       <div>
         <h2 className="font-display text-2xl">{tab==='completed' ? 'Approved' : 'Transfer'}</h2>
@@ -417,15 +417,15 @@ export default function Transfer() {
       const renderHead = () => (
         <thead className={STICKY_HEAD_CLASS}>
           <tr className="text-left text-xs uppercase tracking-wide text-ink-700/50">
-            <th className="px-4 py-3 font-medium">#</th>
+            <th className="px-3 py-1.5 font-medium">#</th>
             <SortableTh label="MID" sortKey="MID" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
             <SortableTh label="Student" sortKey="Student Name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
             <SortableTh label="Branch" sortKey="Branch" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
             {showBranch && <SortableTh label="Batch Name" sortKey="Batch Name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />}
-            <th className="px-4 py-3 font-medium">Phone numbers</th>
+            <th className="px-3 py-1.5 font-medium">Phone numbers</th>
             <SortableTh label="Status" sortKey="Status" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
-            <th className="px-4 py-3 font-medium" aria-hidden="true"></th>
-            <th className="px-4 py-3 font-medium text-right">Actions</th>
+            <th className="px-3 py-1.5 font-medium" aria-hidden="true"></th>
+            <th className="px-3 py-1.5 font-medium text-right">Actions</th>
           </tr>
         </thead>
       );
@@ -441,17 +441,17 @@ export default function Transfer() {
                 onClick={()=>setSelectedTransfer(r)}
                 className={`border-b border-ink-100 align-top cursor-pointer hover:bg-paper/60 ${awaitingMyAction ? 'bg-amber-light/40 border-l-2 border-l-amber' : ''}`}
               >
-                <td className="px-4 py-3 text-ink-700/50">{(page-1)*effectivePageSize+i+1}</td>
-                <td className="px-4 py-3 font-mono text-xs">{r.MID}</td>
-                <td className="px-4 py-3 font-medium">{r['Student Name']}</td>
-                <td className="px-4 py-3 text-ink-700/70">{r.Branch||'—'}</td>
-                {showBranch && <td className="px-4 py-3 text-ink-700/70">{r['Batch Name']||'—'}</td>}
-                <td className="px-4 py-3 text-ink-700/70">
+                <td className="px-3 py-1.5 text-ink-700/50">{(page-1)*effectivePageSize+i+1}</td>
+                <td className="px-3 py-1.5 font-mono text-xs">{r.MID}</td>
+                <td className="px-3 py-1.5 font-medium">{r['Student Name']}</td>
+                <td className="px-3 py-1.5 text-ink-700/70">{r.Branch||'—'}</td>
+                {showBranch && <td className="px-3 py-1.5 text-ink-700/70">{r['Batch Name']||'—'}</td>}
+                <td className="px-3 py-1.5 text-ink-700/70">
                   {phones.length
                     ? phones.map((p,j)=><div key={j} className="font-mono text-xs">{p}</div>)
                     : <span className="text-ink-700/30 italic">—</span>}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-3 py-1.5">
                   <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs ${STATUS_STYLES[r.Status]}`}>{TRANSFER_STATUS_LABELS[r.Status]||r.Status}</span>
                   {awaitingMyAction && (
                     <span className="ml-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-medium bg-amber text-white align-middle">
@@ -459,11 +459,11 @@ export default function Transfer() {
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-3 text-ink-700/70">
+                <td className="px-3 py-1.5 text-ink-700/70">
                   {(user?.role==='Admin'||user?.role==='Head Office') && r['Screenshot Uploaded'] &&
                     <span onClick={(e)=>e.stopPropagation()}><ViewAttachmentButtonIcon mid={r.MID} sheet={tab==='completed'?'completed':'response'}/></span>}
                 </td>
-                <td className="px-4 py-3 text-right text-ink-700/40">→</td>
+                <td className="px-3 py-1.5 text-right text-ink-700/40">→</td>
               </tr>
             );
           })}
@@ -476,10 +476,10 @@ export default function Transfer() {
       );
 
       return (
-        <div className="flex-1 min-h-0 overflow-auto space-y-6">
+        <div className="flex-1 min-h-0 overflow-auto pr-6 space-y-3">
           {hasAttention && (
             <div className="bg-white rounded-lg border-2 border-amber shadow-panel overflow-clip min-w-fit">
-              <div className="px-4 py-2.5 bg-amber-light border-b border-amber/30">
+              <div className="px-3 py-1.5 bg-amber-light border-b border-amber/30">
                 <h3 className="text-sm font-semibold text-amber">Needs Your Attention ({attentionRows.length})</h3>
               </div>
               <table className="w-full text-sm min-w-[900px]">

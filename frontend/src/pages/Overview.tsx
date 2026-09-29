@@ -378,7 +378,7 @@ export default function Overview() {
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto pt-6 space-y-8">
+      <div className="flex-1 min-h-0 overflow-y-auto pt-6 pr-6 space-y-8">
         {isLoading && <p className="text-sm text-ink-700/60">Loading dashboard…</p>}
         {isError && (
           <p className="text-sm text-reject">Couldn&rsquo;t load dashboard data. Please refresh.</p>

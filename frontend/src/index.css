@@ -5,6 +5,13 @@
 @layer base {
   html {
     @apply antialiased;
+    font-size: 15px;
+  }
+  /* Reserve space for the scrollbar on scrollable panes so content doesn't
+     visually jump/hug the scrollbar when it appears. */
+  .overflow-y-auto,
+  .overflow-auto {
+    scrollbar-gutter: stable;
   }
   body {
     @apply bg-paper text-ink font-sans;

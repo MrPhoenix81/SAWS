@@ -49,7 +49,7 @@ function SidebarLink({ to, end, icon: Icon, label }: NavItem) {
       to={to}
       end={end}
       className={({ isActive }) =>
-        `flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
+        `flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors ${
           isActive
             ? 'bg-amber-light text-ink-900 font-medium'
             : 'text-ink-700/70 hover:bg-paper hover:text-ink'
@@ -95,7 +95,7 @@ function StudentsNavItem({ count }: { count: number }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className={`w-full flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
+        className={`w-full flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors ${
           onStudents
             ? 'bg-amber-light text-ink-900 font-medium'
             : 'text-ink-700/70 hover:bg-paper hover:text-ink'
@@ -114,7 +114,7 @@ function StudentsNavItem({ count }: { count: number }) {
         <div className="mt-1 ml-[1.15rem] space-y-0.5 border-l border-ink-100 pl-3.5">
           <NavLink
             to="/students?tab=active"
-            className={`block rounded-md px-2.5 py-1.5 text-sm transition-colors ${
+            className={`block rounded-md px-2.5 py-1 text-sm transition-colors ${
               onStudents && activeTab === 'active'
                 ? 'text-ink-900 font-medium'
                 : 'text-ink-700/60 hover:text-ink'
@@ -127,7 +127,7 @@ function StudentsNavItem({ count }: { count: number }) {
           </NavLink>
           <NavLink
             to="/students?tab=completed"
-            className={`block rounded-md px-2.5 py-1.5 text-sm transition-colors ${
+            className={`block rounded-md px-2.5 py-1 text-sm transition-colors ${
               onStudents && activeTab === 'completed'
                 ? 'text-ink-900 font-medium'
                 : 'text-ink-700/60 hover:text-ink'
@@ -152,13 +152,13 @@ function TransferNavItem({ count }: { count: number }) {
   return (
     <div>
       <button type="button" onClick={() => setOpen(v => !v)} aria-expanded={open}
-        className={`w-full flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${onTransfer ? 'bg-amber-light text-ink-900 font-medium' : 'text-ink-700/70 hover:bg-paper hover:text-ink'}`}>
+        className={`w-full flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors ${onTransfer ? 'bg-amber-light text-ink-900 font-medium' : 'text-ink-700/70 hover:bg-paper hover:text-ink'}`}>
         <ArrowLeftRight size={16} /><span className="flex-1 text-left">Transfer</span><CountBadge count={count} />
         <ChevronDown size={14} className={`text-ink-700/40 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && <div className="mt-1 ml-[1.15rem] space-y-0.5 border-l border-ink-100 pl-3.5">
-        <NavLink to="/transfer?tab=active" className={`block rounded-md px-2.5 py-1.5 text-sm ${onTransfer && activeTab === 'active' ? 'text-ink-900 font-medium' : 'text-ink-700/60 hover:text-ink'}`}><span className="flex items-center gap-2"><span>Active</span><CountBadge count={count} /></span></NavLink>
-        <NavLink to="/transfer?tab=completed" className={`block rounded-md px-2.5 py-1.5 text-sm ${onTransfer && activeTab === 'completed' ? 'text-ink-900 font-medium' : 'text-ink-700/60 hover:text-ink'}`}>Approved</NavLink>
+        <NavLink to="/transfer?tab=active" className={`block rounded-md px-2.5 py-1 text-sm ${onTransfer && activeTab === 'active' ? 'text-ink-900 font-medium' : 'text-ink-700/60 hover:text-ink'}`}><span className="flex items-center gap-2"><span>Active</span><CountBadge count={count} /></span></NavLink>
+        <NavLink to="/transfer?tab=completed" className={`block rounded-md px-2.5 py-1 text-sm ${onTransfer && activeTab === 'completed' ? 'text-ink-900 font-medium' : 'text-ink-700/60 hover:text-ink'}`}>Approved</NavLink>
       </div>}
     </div>
   );
@@ -183,7 +183,7 @@ function InactiveNavItem({ count }: { count: number }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className={`w-full flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors ${
+        className={`w-full flex items-center gap-2.5 rounded-md px-3 py-1.5 text-sm transition-colors ${
           onInactive
             ? 'bg-amber-light text-ink-900 font-medium'
             : 'text-ink-700/70 hover:bg-paper hover:text-ink'
@@ -202,7 +202,7 @@ function InactiveNavItem({ count }: { count: number }) {
         <div className="mt-1 ml-[1.15rem] space-y-0.5 border-l border-ink-100 pl-3.5">
           <NavLink
             to="/inactive?tab=active"
-            className={`block rounded-md px-2.5 py-1.5 text-sm transition-colors ${
+            className={`block rounded-md px-2.5 py-1 text-sm transition-colors ${
               onInactive && activeTab === 'active'
                 ? 'text-ink-900 font-medium'
                 : 'text-ink-700/60 hover:text-ink'
@@ -215,7 +215,7 @@ function InactiveNavItem({ count }: { count: number }) {
           </NavLink>
           <NavLink
             to="/inactive?tab=completed"
-            className={`block rounded-md px-2.5 py-1.5 text-sm transition-colors ${
+            className={`block rounded-md px-2.5 py-1 text-sm transition-colors ${
               onInactive && activeTab === 'completed'
                 ? 'text-ink-900 font-medium'
                 : 'text-ink-700/60 hover:text-ink'
@@ -313,25 +313,23 @@ export default function AppLayout() {
     <div className="h-screen flex bg-paper text-ink overflow-hidden">
       {/* Sidebar - stays fixed in place while page content scrolls */}
       <aside className="w-64 shrink-0 bg-white border-r border-ink-100 flex flex-col h-full">
-        <div className="h-16 flex items-center gap-3 px-5 border-b border-ink-100 shrink-0">
+        <div className="h-12 flex items-center gap-3 px-4 border-b border-ink-100 shrink-0">
           {/* Company logo. This is a wide, white/light-blue wordmark, so it
               sits on a dark chip to stay visible against the white sidebar. */}
           <img
             src="/logo.svg"
             alt="Magnus"
-            className="h-9 w-auto max-w-[120px] rounded-md bg-ink-900 object-contain px-2.5 py-1.5 shrink-0"
+            className="h-7 w-auto max-w-[100px] rounded-md bg-ink-900 object-contain px-2 py-1 shrink-0"
             onError={(e) => {
               (e.currentTarget as HTMLImageElement).style.display = 'none';
             }}
           />
-          <p className="font-display text-[30px] tracking-widest text-ink-700/50 uppercase leading-tight">
+          <p className="font-display text-[20px] tracking-widest text-ink-700/50 uppercase leading-tight">
             SAWS
-            <br />
-            
           </p>
         </div>
 
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+        <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
           <div className="space-y-1">
             <p className="px-3 mb-1.5 text-[11px] font-medium uppercase tracking-wider text-ink-700/40">
               General
@@ -369,8 +367,8 @@ export default function AppLayout() {
           pinned to the viewport height too, so only <main>'s own
           overflow-y-auto scrolls - the header above it stays put. */}
       <div className="flex-1 flex flex-col min-w-0 h-full">
-        <header className="h-16 shrink-0 border-b border-ink-100 bg-white flex items-center justify-between px-6">
-          <h1 className="font-display text-lg leading-tight">{pageTitle}</h1>
+        <header className="h-12 shrink-0 border-b border-ink-100 bg-white flex items-center justify-between px-5">
+          <h1 className="font-display text-base leading-tight">{pageTitle}</h1>
 
           <div className="flex items-center gap-3">
             <NotificationBell />
@@ -419,8 +417,8 @@ export default function AppLayout() {
         <main
           className={
             fixedHeightPage
-              ? 'flex-1 min-h-0 flex flex-col overflow-hidden px-6 py-8'
-              : 'flex-1 overflow-y-auto px-6 py-8'
+              ? 'flex-1 min-h-0 flex flex-col overflow-hidden px-5 py-4'
+              : 'flex-1 overflow-y-auto px-5 py-4'
           }
         >
           <div

@@ -576,6 +576,17 @@ export default function Inactive() {
     enabled: !!user
   });
 
+  useEffect(() => {
+    const mid = searchParams.get('openMid');
+    if (!mid || listQuery.isFetching) return;
+    const row = listQuery.data?.rows.find((entry) => entry.MID === mid);
+    if (!row) return;
+    setSelectedInactive(row);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('openMid');
+    setSearchParams(nextParams, { replace: true });
+  }, [listQuery.data, listQuery.isFetching, searchParams, setSearchParams]);
+
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['inactive'] });
     queryClient.invalidateQueries({ queryKey: ['notifications'] });

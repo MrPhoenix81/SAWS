@@ -315,6 +315,16 @@ export default function Transfer() {
   const showBranch=user?.role==='Head Office'; // Head Office sees every branch, so show which one each row belongs to
   const branchesQuery=useQuery({queryKey:['branches'],queryFn:listBranches,enabled:user?.role==='Admin'||user?.role==='Head Office'});
   const query=useQuery({queryKey:['transfer',tab,params],queryFn:()=>listTransfer(tab==='completed'?'completed':'response',params),enabled:!!user});
+  React.useEffect(()=>{
+    const mid=sp.get('openMid');
+    if(!mid||query.isFetching)return;
+    const row=query.data?.rows.find(entry=>entry.MID===mid);
+    if(!row)return;
+    setSelectedTransfer(row);
+    const next=new URLSearchParams(sp);
+    next.delete('openMid');
+    setSp(next,{replace:true});
+  },[query.data,query.isFetching,sp,setSp]);
   const refresh=()=>{qc.invalidateQueries({queryKey:['transfer']});qc.invalidateQueries({queryKey:['notifications']});qc.invalidateQueries({queryKey:['activeCounts']});};
   const hoEdit=useMutation({
     mutationFn:()=>headOfficeUpdateTransfer(editTarget!.MID,{'MID':form.mid,'Student Name':form.studentName,'Phone Number 1':form.phone1,'Phone Number 2':form.phone2||undefined,'Phone Number 3':form.phone3||undefined,'Transfer To Branch':form.transferToBranch,Reason:form.reason}),

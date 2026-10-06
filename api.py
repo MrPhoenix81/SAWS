@@ -31,7 +31,7 @@ from notifications import (
     get_notifications_for_user_, mark_notification_read_, mark_all_notifications_read_,
     mark_page_seen_, get_unseen_counts_,
 )
-from dashboard import get_dashboard_data_
+from dashboard import get_dashboard_data_, get_dashboard_rows_
 from inactive import (
     submit_inactive_, list_inactive_, head_office_approve_inactive_, head_office_reject_inactive_,
     admin_approve_inactive_, admin_reject_inactive_, admin_update_inactive_, head_office_update_inactive_, delete_inactive_,
@@ -303,7 +303,9 @@ def route_action_(action, user, payload):
 
     # ---- Dashboard ----
     if action == 'dashboard.get':
-        return get_dashboard_data_(user)
+        return get_dashboard_data_(user, payload)
+    if action == 'dashboard.rows':
+        return get_dashboard_rows_(user, payload)
 
     # ---- Admin: System / Important Links (item 9) ----
     # Plain external URLs only - no credentials are ever stored or

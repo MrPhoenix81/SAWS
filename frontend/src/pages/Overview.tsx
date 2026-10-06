@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer,
   LineChart,
@@ -33,11 +34,14 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { callApi, listBranches } from '@/lib/apiClient';
+import { readOverviewFilters, writeOverviewFilters } from '@/lib/sessionState';
 import { useAuth } from '@/context/AuthContext';
 import type { DashboardData } from '@/types';
 
+type OverviewMetric = 'pending' | 'awaitingAdminApproval' | 'approved' | 'rejected' | 'todaysEntries' | 'monthlyEntries';
+
 const CARD_DEFS: {
-  key: keyof DashboardData['cards'];
+  key: OverviewMetric;
   label: string;
   accent: string;
   tint: string;
@@ -50,6 +54,20 @@ const CARD_DEFS: {
   { key: 'todaysEntries', label: "Today's Entries", accent: 'text-ink', tint: 'bg-ink-50', icon: CalendarDays },
   { key: 'monthlyEntries', label: 'This Month', accent: 'text-ink', tint: 'bg-ink-50', icon: CalendarRange }
 ];
+
+interface DashboardRow {
+  slNo: number | string;
+  mid: string;
+  studentName: string;
+  workflow: 'Discontinue' | 'Inactive' | 'Transfer';
+  currentStatus: string;
+  tab: 'active' | 'completed';
+}
+
+interface DashboardRowsResult {
+  total: number;
+  rows: DashboardRow[];
+}
 
 // Shared blue scale for any chart shaded by rank: darkest = highest value,
 // lightest = lowest. Capped at a mid-light blue (not the palest tint) so the
@@ -141,15 +159,23 @@ function downloadOverviewPdf(
 
 export default function Overview() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   // Admin and Head Office see every branch by default and can narrow down
   // to one via the dropdown below. Every other role only ever sees their
   // own branch, so there's nothing for them to filter - just a download
   // button for their own branch's overview.
   const hasFullVisibility = user?.role === 'Admin' || user?.role === 'Head Office';
 
-  const [branchFilter, setBranchFilter] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [savedFilters] = useState(readOverviewFilters);
+  const [branchFilter, setBranchFilter] = useState(savedFilters.branch);
+  const [workflowFilter, setWorkflowFilter] = useState(savedFilters.workflow);
+  const [dateFrom, setDateFrom] = useState(savedFilters.dateFrom);
+  const [dateTo, setDateTo] = useState(savedFilters.dateTo);
+  const [selectedMetric, setSelectedMetric] = useState<OverviewMetric | null>(null);
+  const [openColumnFilter, setOpenColumnFilter] = useState<'workflow' | 'status' | null>(null);
+  const [selectedWorkflows, setSelectedWorkflows] = useState<string[]>([]);
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const columnFilterMenuRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
 
@@ -158,11 +184,13 @@ export default function Overview() {
   // is clicked - same pattern as the Students page.
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [draftBranch, setDraftBranch] = useState('');
+  const [draftWorkflow, setDraftWorkflow] = useState('');
   const [draftDateFrom, setDraftDateFrom] = useState('');
   const [draftDateTo, setDraftDateTo] = useState('');
 
   function openFilters() {
     setDraftBranch(branchFilter);
+    setDraftWorkflow(workflowFilter);
     setDraftDateFrom(dateFrom);
     setDraftDateTo(dateTo);
     setFiltersOpen(true);
@@ -170,26 +198,34 @@ export default function Overview() {
 
   function applyFilters() {
     setBranchFilter(draftBranch);
+    setWorkflowFilter(draftWorkflow);
     setDateFrom(draftDateFrom);
     setDateTo(draftDateTo);
+    writeOverviewFilters({
+      branch: draftBranch,
+      workflow: draftWorkflow,
+      dateFrom: draftDateFrom,
+      dateTo: draftDateTo
+    });
     setFiltersOpen(false);
   }
 
   function clearDraftFilters() {
     setDraftBranch('');
+    setDraftWorkflow('');
     setDraftDateFrom('');
     setDraftDateTo('');
   }
 
   function clearAllFilters() {
     setBranchFilter('');
+    setWorkflowFilter('');
     setDateFrom('');
     setDateTo('');
+    writeOverviewFilters({ branch: '', workflow: '', dateFrom: '', dateTo: '' });
   }
 
-  const activeFilterCount = [hasFullVisibility ? branchFilter : '', dateFrom, dateTo].filter(
-    Boolean
-  ).length;
+  const activeFilterCount = [hasFullVisibility ? branchFilter : '', hasFullVisibility ? workflowFilter : '', dateFrom, dateTo].filter(Boolean).length;
 
   const branchesQuery = useQuery({
     queryKey: ['branches'],
@@ -201,16 +237,72 @@ export default function Overview() {
   // its own page (/admin/links, Admin-only) - see SystemLinks.tsx.
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['dashboard', hasFullVisibility ? branchFilter : user?.branch, dateFrom, dateTo],
+    queryKey: ['dashboard', hasFullVisibility ? branchFilter : user?.branch, dateFrom, dateTo, hasFullVisibility ? workflowFilter : ''],
     queryFn: () =>
       callApi<DashboardData>('dashboard.get', {
         ...(hasFullVisibility && branchFilter ? { branch: branchFilter } : {}),
+        ...(hasFullVisibility && workflowFilter ? { workflow: workflowFilter } : {}),
         ...(dateFrom ? { dateFrom } : {}),
         ...(dateTo ? { dateTo } : {})
       })
   });
 
+  const dashboardRowsQuery = useQuery({
+    queryKey: ['dashboard-rows', selectedMetric, branchFilter, workflowFilter, dateFrom, dateTo],
+    queryFn: () => callApi<DashboardRowsResult>('dashboard.rows', {
+      metric: selectedMetric,
+      ...(branchFilter ? { branch: branchFilter } : {}),
+      ...(workflowFilter ? { workflow: workflowFilter } : {}),
+      ...(dateFrom ? { dateFrom } : {}),
+      ...(dateTo ? { dateTo } : {})
+    }),
+    enabled: !!selectedMetric && hasFullVisibility
+  });
+  const dashboardRows = dashboardRowsQuery.data?.rows ?? [];
+  const visibleDashboardRows = dashboardRows.filter((row) =>
+    (!selectedWorkflows.length || selectedWorkflows.includes(row.workflow)) &&
+    (!selectedStatuses.length || selectedStatuses.includes(row.currentStatus))
+  );
+  const workflowOptions = [...new Set(dashboardRows.map((row) => row.workflow))];
+  const statusOptions = [...new Set(dashboardRows.map((row) => row.currentStatus))];
+  const workflowCounts = dashboardRows.reduce<Record<string, number>>((counts, row) => {
+    counts[row.workflow] = (counts[row.workflow] || 0) + 1;
+    return counts;
+  }, {});
+  const statusCounts = dashboardRows.reduce<Record<string, number>>((counts, row) => {
+    counts[row.currentStatus] = (counts[row.currentStatus] || 0) + 1;
+    return counts;
+  }, {});
+  const toggleSelection = (value: string, selected: string[], update: (next: string[]) => void) => {
+    update(selected.includes(value) ? selected.filter((item) => item !== value) : [...selected, value]);
+  };
+
+  useEffect(() => {
+    if (!openColumnFilter) return;
+    function closeColumnFilterOnOutsideClick(event: MouseEvent) {
+      if (event.target instanceof Node && !columnFilterMenuRef.current?.contains(event.target)) {
+        setOpenColumnFilter(null);
+      }
+    }
+    document.addEventListener('mousedown', closeColumnFilterOnOutsideClick);
+    return () => document.removeEventListener('mousedown', closeColumnFilterOnOutsideClick);
+  }, [openColumnFilter]);
+
   const branchLabel = hasFullVisibility ? branchFilter || 'All branches' : user?.branch || 'My branch';
+  const workflowLabel = hasFullVisibility ? workflowFilter || 'All workflows' : '';
+  const workflowPath = (workflow: string) => {
+    if (workflow === 'Inactive') return '/inactive';
+    if (workflow === 'Transfer') return '/transfer';
+    return '/students';
+  };
+  const openWorkflowPage = (workflow: string, tab: 'active' | 'completed') => {
+    navigate(`${workflowPath(workflow)}?tab=${tab}`);
+  };
+  const openDashboardRow = (row: DashboardRow) => {
+    const tab = row.tab === 'completed' ? 'completed' : 'active';
+    navigate(`${workflowPath(row.workflow)}?tab=${tab}&search=${encodeURIComponent(row.mid)}&openMid=${encodeURIComponent(row.mid)}`);
+    setSelectedMetric(null);
+  };
   const dateRangeLabel =
     dateFrom || dateTo ? `${dateFrom || 'Start'} to ${dateTo || 'Today'}` : null;
 
@@ -251,6 +343,7 @@ export default function Overview() {
                 ? `Overview for ${branchFilter}.`
                 : 'Overview across every branch.'
               : `Overview for ${user?.branch}.`}
+            {hasFullVisibility && workflowFilter ? ` Workflow: ${workflowLabel}.` : ''}
             {dateRangeLabel ? ` Filtered ${dateRangeLabel}.` : ''}
           </p>
         </div>
@@ -309,7 +402,7 @@ export default function Overview() {
             <div>
               <h3 className="font-display text-lg">Filters</h3>
               <p className="text-xs text-ink-700/60 mt-0.5">
-                Narrow the report by branch and date range.
+                Narrow the report by branch, workflow, and date range.
               </p>
             </div>
             <button
@@ -335,6 +428,22 @@ export default function Overview() {
                       {b}
                     </option>
                   ))}
+                </select>
+              </div>
+            )}
+
+            {hasFullVisibility && (
+              <div>
+                <label className="block text-xs font-medium text-ink-700/70 mb-1.5">Workflow</label>
+                <select
+                  value={draftWorkflow}
+                  onChange={(e) => setDraftWorkflow(e.target.value)}
+                  className="w-full rounded-md border border-ink-200 px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-ink-900"
+                >
+                  <option value="">All workflows</option>
+                  <option value="Discontinue">Discontinue</option>
+                  <option value="Inactive">Inactive</option>
+                  <option value="Transfer">Transfer</option>
                 </select>
               </div>
             )}
@@ -388,10 +497,27 @@ export default function Overview() {
           <>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             {CARD_DEFS.map(({ key, label, accent, tint, icon: Icon }) => (
-              <div
-                key={key}
-                className="bg-white rounded-lg border border-ink-100 shadow-panel px-4 py-4 flex flex-col gap-3"
-              >
+              hasFullVisibility ? (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setSelectedMetric(key)}
+                  aria-label={`View ${label.toLowerCase()} records`}
+                  className="text-left bg-white rounded-lg border border-ink-100 shadow-panel px-4 py-4 flex flex-col gap-3 hover:border-ink-300 hover:shadow-md transition-shadow"
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-ink-700/60">{label}</p>
+                    <span className={`flex items-center justify-center h-7 w-7 rounded-md ${tint} ${accent}`}>
+                      <Icon size={14} />
+                    </span>
+                  </div>
+                  <p className={`font-display text-3xl ${accent}`}>{data.cards[key]}</p>
+                </button>
+              ) : (
+                <div
+                  key={key}
+                  className="bg-white rounded-lg border border-ink-100 shadow-panel px-4 py-4 flex flex-col gap-3"
+                >
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-ink-700/60">{label}</p>
                   <span className={`flex items-center justify-center h-7 w-7 rounded-md ${tint} ${accent}`}>
@@ -399,22 +525,31 @@ export default function Overview() {
                   </span>
                 </div>
                 <p className={`font-display text-3xl ${accent}`}>{data.cards[key]}</p>
-              </div>
+                </div>
+              )
             ))}
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            {data.charts.workflowComparison.map((w) => (
-              <div key={w.workflow} className="bg-white rounded-lg border border-ink-100 shadow-panel p-4">
-                <p className="text-sm font-medium">{w.workflow}</p>
-                <div className="grid grid-cols-3 gap-2 mt-3 text-center">
-                  <div><p className="text-xs text-ink-700/50">Pending</p><p className="font-display text-xl text-amber">{w.pending}</p></div>
-                  <div><p className="text-xs text-ink-700/50">Approved</p><p className="font-display text-xl text-approve">{w.approved}</p></div>
-                  <div><p className="text-xs text-ink-700/50">Total</p><p className="font-display text-xl">{w.total}</p></div>
+          {!workflowFilter && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {data.charts.workflowComparison.map((w) => (
+                <div key={w.workflow} className="bg-white rounded-lg border border-ink-100 shadow-panel p-4">
+                  <p className="text-sm font-medium">{w.workflow}</p>
+                  <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+                    <button type="button" onClick={() => openWorkflowPage(w.workflow, 'active')} aria-label={`Open ${w.workflow} pending records`} className="rounded hover:bg-paper focus:outline-none focus:ring-2 focus:ring-ink-900">
+                      <p className="text-xs text-ink-700/50">Pending</p><p className="font-display text-xl text-amber">{w.pending}</p>
+                    </button>
+                    <button type="button" onClick={() => openWorkflowPage(w.workflow, 'completed')} aria-label={`Open ${w.workflow} approved records`} className="rounded hover:bg-paper focus:outline-none focus:ring-2 focus:ring-ink-900">
+                      <p className="text-xs text-ink-700/50">Approved</p><p className="font-display text-xl text-approve">{w.approved}</p>
+                    </button>
+                    <button type="button" onClick={() => openWorkflowPage(w.workflow, 'active')} aria-label={`Open ${w.workflow} records`} className="rounded hover:bg-paper focus:outline-none focus:ring-2 focus:ring-ink-900">
+                      <p className="text-xs text-ink-700/50">Total</p><p className="font-display text-xl">{w.total}</p>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
             <div className="bg-white rounded-lg border border-ink-100 shadow-panel p-5 flex flex-col">
@@ -432,7 +567,7 @@ export default function Overview() {
               </div>
             </div>
 
-            {(['Discontinue', 'Inactive', 'Transfer'] as const).map((workflow) => {
+            {(workflowFilter ? [workflowFilter as 'Discontinue' | 'Inactive' | 'Transfer'] : ['Discontinue', 'Inactive', 'Transfer'] as const).map((workflow) => {
               const rows = data.charts.statusDistribution[workflow];
               return (
                 <div key={workflow} className="bg-white rounded-lg border border-ink-100 shadow-panel p-5 flex flex-col">
@@ -574,6 +709,121 @@ export default function Overview() {
         </>
         )}
       </div>
+
+      {selectedMetric && (
+        <div className="fixed inset-0 z-50 bg-ink-950/45 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+          <div
+            className="w-[80vw] min-w-[min(95vw,36rem)] h-[80vh] min-h-[18rem] max-w-[95vw] max-h-[90vh] resize overflow-hidden bg-white rounded-lg shadow-panel flex flex-col"
+            style={{ resize: 'both' }}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-ink-100">
+              <div>
+                <h3 className="font-display text-lg">{CARD_DEFS.find((card) => card.key === selectedMetric)?.label} records</h3>
+                <p className="text-xs text-ink-700/60 mt-0.5">
+                  {dashboardRowsQuery.data ? `${visibleDashboardRows.length} of ${dashboardRowsQuery.data.total} record(s)` : 'Matching the current overview filters'}
+                </p>
+              </div>
+              <button type="button" onClick={() => setSelectedMetric(null)} aria-label="Close records" className="text-ink-700/50 hover:text-ink-900">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex flex-1 min-h-0 flex-col overflow-x-auto px-5 pb-5">
+              {dashboardRowsQuery.isLoading && <p className="text-sm text-ink-700/60">Loading records…</p>}
+              {dashboardRowsQuery.isError && <p className="text-sm text-reject">Couldn&rsquo;t load records. Please close and try again.</p>}
+              {dashboardRowsQuery.data && dashboardRowsQuery.data.rows.length === 0 && (
+                <p className="text-sm text-ink-700/60">No records match this KPI and the current filters.</p>
+              )}
+              {dashboardRowsQuery.data && dashboardRowsQuery.data.rows.length > 0 && (
+                <div className="flex h-full min-h-0 min-w-[900px] flex-col">
+                  <table className="w-full table-fixed text-sm text-left">
+                    <colgroup>
+                      <col className="w-16" /><col className="w-36" /><col className="w-1/4" />
+                      <col className="w-32" /><col /><col className="w-32" />
+                    </colgroup>
+                    <thead className="relative z-20 bg-white text-xs text-ink-700/70 shadow-sm">
+                      <tr>
+                      <th className="bg-white px-3 py-2 font-medium">Sl No</th>
+                      <th className="bg-white px-3 py-2 font-medium">MID</th>
+                      <th className="bg-white px-3 py-2 font-medium">Student Name</th>
+                      <th className="relative bg-white px-3 py-2 font-medium">
+                        <button type="button" onClick={() => setOpenColumnFilter(openColumnFilter === 'workflow' ? null : 'workflow')} aria-expanded={openColumnFilter === 'workflow'} className="inline-flex items-center gap-1 hover:text-ink-900">
+                          Workflow <span aria-hidden="true">▾</span>
+                          {selectedWorkflows.length > 0 && <span className="rounded-full bg-ink-900 px-1.5 text-white">{selectedWorkflows.length}</span>}
+                        </button>
+                        {openColumnFilter === 'workflow' && (
+                          <div ref={columnFilterMenuRef} className="absolute left-0 top-full z-50 mt-1 max-h-64 w-56 overflow-y-auto rounded-md border border-ink-200 bg-white p-2 shadow-panel">
+                            <div className="flex justify-between border-b border-ink-100 px-2 pb-2">
+                              <span className="text-[11px] text-ink-700/60">Select workflows</span>
+                              <button type="button" onClick={() => setSelectedWorkflows([])} className="text-[11px] text-ink-700/60 hover:text-ink-900">Clear</button>
+                            </div>
+                            {workflowOptions.map((option) => (
+                              <label key={option} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-paper">
+                                <input type="checkbox" checked={selectedWorkflows.includes(option)} onChange={() => toggleSelection(option, selectedWorkflows, setSelectedWorkflows)} />
+                                <span className="flex-1 text-left">{option}</span><span className="text-ink-700/50">{workflowCounts[option]}</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </th>
+                      <th className="relative bg-white px-3 py-2 font-medium">
+                        <button type="button" onClick={() => setOpenColumnFilter(openColumnFilter === 'status' ? null : 'status')} aria-expanded={openColumnFilter === 'status'} className="inline-flex items-center gap-1 hover:text-ink-900">
+                          Current Status <span aria-hidden="true">▾</span>
+                          {selectedStatuses.length > 0 && <span className="rounded-full bg-ink-900 px-1.5 text-white">{selectedStatuses.length}</span>}
+                        </button>
+                        {openColumnFilter === 'status' && (
+                          <div ref={columnFilterMenuRef} className="absolute left-0 top-full z-50 mt-1 max-h-64 w-64 overflow-y-auto rounded-md border border-ink-200 bg-white p-2 shadow-panel">
+                            <div className="flex justify-between border-b border-ink-100 px-2 pb-2">
+                              <span className="text-[11px] text-ink-700/60">Select statuses</span>
+                              <button type="button" onClick={() => setSelectedStatuses([])} className="text-[11px] text-ink-700/60 hover:text-ink-900">Clear</button>
+                            </div>
+                            {statusOptions.map((option) => (
+                              <label key={option} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-paper">
+                                <input type="checkbox" checked={selectedStatuses.includes(option)} onChange={() => toggleSelection(option, selectedStatuses, setSelectedStatuses)} />
+                                <span className="flex-1 text-left">{option}</span><span className="text-ink-700/50">{statusCounts[option]}</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </th>
+                      <th className="bg-white px-3 py-2 font-medium">Actions</th>
+                      </tr>
+                    </thead>
+                  </table>
+                  <div className="min-h-0 flex-1 overflow-y-auto">
+                    <table className="w-full table-fixed text-sm text-left">
+                      <colgroup>
+                        <col className="w-16" /><col className="w-36" /><col className="w-1/4" />
+                        <col className="w-32" /><col /><col className="w-32" />
+                      </colgroup>
+                      <tbody className="divide-y divide-ink-100">
+                    {visibleDashboardRows.map((row, index) => (
+                      <tr key={`${row.workflow}-${row.mid}`} className="hover:bg-paper/70">
+                        <td className="px-3 py-2 align-top">{index + 1}</td>
+                        <td className="break-all px-3 py-2 align-top font-medium">{row.mid}</td>
+                        <td className="break-words px-3 py-2 align-top">{row.studentName}</td>
+                        <td className="break-words px-3 py-2 align-top">{row.workflow}</td>
+                        <td className="break-words px-3 py-2 align-top">{row.currentStatus}</td>
+                        <td className="px-3 py-2 align-top">
+                          <button type="button" onClick={() => openDashboardRow(row)} className="rounded-md bg-ink-900 px-3 py-1.5 text-xs text-white hover:bg-ink-700">
+                            Open actions
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {visibleDashboardRows.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-3 py-8 text-center text-sm text-ink-700/60">No records match the selected workflow and status.</td>
+                      </tr>
+                    )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -377,6 +377,17 @@ export default function Students() {
     queryFn: () => listStudents(tab, params)
   });
 
+  useEffect(() => {
+    const mid = searchParams.get('openMid');
+    if (!mid || studentsQuery.isFetching) return;
+    const row = studentsQuery.data?.rows.find((student) => student.MID === mid);
+    if (!row) return;
+    setSelectedStudentForDetails(row);
+    const next = new URLSearchParams(searchParams);
+    next.delete('openMid');
+    setSearchParams(next, { replace: true });
+  }, [studentsQuery.data, studentsQuery.isFetching, searchParams, setSearchParams]);
+
   // Only SCM may create a brand new discontinuation entry - not even
   // Admin. Admin can still edit/approve/reject/delete existing entries,
   // just can't originate one (see submitStudentEntry_ in Students.gs,

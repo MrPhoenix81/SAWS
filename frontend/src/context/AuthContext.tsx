@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { setToken, setTokenRefreshHandler, whoAmI, login as apiLogin, callApi, ApiError } from '@/lib/apiClient';
+import { clearOverviewFilters } from '@/lib/sessionState';
 import type { AuthUser } from '@/types';
 
 // 120 minutes, mirrors SESSION_TIMEOUT_MINUTES in config.py.
@@ -81,6 +82,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setToken(null);
     clearStoredSession();
+    clearOverviewFilters();
     setUser(null);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
   }
@@ -104,6 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const stored = readStoredSession();
     if (!stored || Date.now() - stored.savedAt > SESSION_TIMEOUT_MS) {
       clearStoredSession();
+      clearOverviewFilters();
       setLoading(false);
       return;
     }
@@ -120,6 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
       .catch(() => {
         clearStoredSession();
+        clearOverviewFilters();
         setToken(null);
       })
       .finally(() => setLoading(false));
@@ -153,6 +157,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const browser = typeof navigator !== 'undefined' ? navigator.userAgent : '';
       const { token, user: resolvedUser } = await apiLogin(email, password, browser);
+      clearOverviewFilters();
       rememberMeRef.current = rememberMe;
       setToken(token);
       setUser(resolvedUser);

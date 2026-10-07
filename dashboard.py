@@ -276,6 +276,7 @@ def get_dashboard_rows_(user, params=None):
                 'slNo': row.get('Sl No', ''),
                 'mid': row.get('MID', ''),
                 'studentName': row.get('Student Name', ''),
+                'branch': row.get('Branch') or 'Unknown',
                 'workflow': workflow,
                 'currentStatus': config.STATUS_LABELS.get(status, status or ''),
                 'tab': sheet,

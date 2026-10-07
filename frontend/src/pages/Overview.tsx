@@ -59,6 +59,7 @@ interface DashboardRow {
   slNo: number | string;
   mid: string;
   studentName: string;
+  branch: string;
   workflow: 'Discontinue' | 'Inactive' | 'Transfer';
   currentStatus: string;
   tab: 'active' | 'completed';
@@ -172,7 +173,8 @@ export default function Overview() {
   const [dateFrom, setDateFrom] = useState(savedFilters.dateFrom);
   const [dateTo, setDateTo] = useState(savedFilters.dateTo);
   const [selectedMetric, setSelectedMetric] = useState<OverviewMetric | null>(null);
-  const [openColumnFilter, setOpenColumnFilter] = useState<'workflow' | 'status' | null>(null);
+  const [openColumnFilter, setOpenColumnFilter] = useState<'branch' | 'workflow' | 'status' | null>(null);
+  const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [selectedWorkflows, setSelectedWorkflows] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const columnFilterMenuRef = useRef<HTMLDivElement>(null);
@@ -260,11 +262,17 @@ export default function Overview() {
   });
   const dashboardRows = dashboardRowsQuery.data?.rows ?? [];
   const visibleDashboardRows = dashboardRows.filter((row) =>
+    (!selectedBranches.length || selectedBranches.includes(row.branch)) &&
     (!selectedWorkflows.length || selectedWorkflows.includes(row.workflow)) &&
     (!selectedStatuses.length || selectedStatuses.includes(row.currentStatus))
   );
+  const branchOptions = [...new Set(dashboardRows.map((row) => row.branch))];
   const workflowOptions = [...new Set(dashboardRows.map((row) => row.workflow))];
   const statusOptions = [...new Set(dashboardRows.map((row) => row.currentStatus))];
+  const branchCounts = dashboardRows.reduce<Record<string, number>>((counts, row) => {
+    counts[row.branch] = (counts[row.branch] || 0) + 1;
+    return counts;
+  }, {});
   const workflowCounts = dashboardRows.reduce<Record<string, number>>((counts, row) => {
     counts[row.workflow] = (counts[row.workflow] || 0) + 1;
     return counts;
@@ -737,14 +745,34 @@ export default function Overview() {
                 <div className="flex h-full min-h-0 min-w-[900px] flex-col">
                   <table className="w-full table-fixed text-sm text-left">
                     <colgroup>
-                      <col className="w-16" /><col className="w-36" /><col className="w-1/4" />
-                      <col className="w-32" /><col /><col className="w-32" />
+                      <col className="w-16" /><col className="w-36" /><col className="w-1/5" />
+                      <col className="w-36" /><col className="w-32" /><col /><col className="w-32" />
                     </colgroup>
                     <thead className="relative z-20 bg-white text-xs text-ink-700/70 shadow-sm">
                       <tr>
                       <th className="bg-white px-3 py-2 font-medium">Sl No</th>
                       <th className="bg-white px-3 py-2 font-medium">MID</th>
                       <th className="bg-white px-3 py-2 font-medium">Student Name</th>
+                      <th className="relative bg-white px-3 py-2 font-medium">
+                        <button type="button" onClick={() => setOpenColumnFilter(openColumnFilter === 'branch' ? null : 'branch')} aria-expanded={openColumnFilter === 'branch'} className="inline-flex items-center gap-1 hover:text-ink-900">
+                          Branch <span aria-hidden="true">▾</span>
+                          {selectedBranches.length > 0 && <span className="rounded-full bg-ink-900 px-1.5 text-white">{selectedBranches.length}</span>}
+                        </button>
+                        {openColumnFilter === 'branch' && (
+                          <div ref={columnFilterMenuRef} className="absolute left-0 top-full z-50 mt-1 max-h-64 w-56 overflow-y-auto rounded-md border border-ink-200 bg-white p-2 shadow-panel">
+                            <div className="flex justify-between border-b border-ink-100 px-2 pb-2">
+                              <span className="text-[11px] text-ink-700/60">Select branches</span>
+                              <button type="button" onClick={() => setSelectedBranches([])} className="text-[11px] text-ink-700/60 hover:text-ink-900">Clear</button>
+                            </div>
+                            {branchOptions.map((option) => (
+                              <label key={option} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-paper">
+                                <input type="checkbox" checked={selectedBranches.includes(option)} onChange={() => toggleSelection(option, selectedBranches, setSelectedBranches)} />
+                                <span className="flex-1 text-left">{option}</span><span className="text-ink-700/50">{branchCounts[option]}</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </th>
                       <th className="relative bg-white px-3 py-2 font-medium">
                         <button type="button" onClick={() => setOpenColumnFilter(openColumnFilter === 'workflow' ? null : 'workflow')} aria-expanded={openColumnFilter === 'workflow'} className="inline-flex items-center gap-1 hover:text-ink-900">
                           Workflow <span aria-hidden="true">▾</span>
@@ -792,8 +820,8 @@ export default function Overview() {
                   <div className="min-h-0 flex-1 overflow-y-auto">
                     <table className="w-full table-fixed text-sm text-left">
                       <colgroup>
-                        <col className="w-16" /><col className="w-36" /><col className="w-1/4" />
-                        <col className="w-32" /><col /><col className="w-32" />
+                        <col className="w-16" /><col className="w-36" /><col className="w-1/5" />
+                        <col className="w-36" /><col className="w-32" /><col /><col className="w-32" />
                       </colgroup>
                       <tbody className="divide-y divide-ink-100">
                     {visibleDashboardRows.map((row, index) => (
@@ -801,6 +829,7 @@ export default function Overview() {
                         <td className="px-3 py-2 align-top">{index + 1}</td>
                         <td className="break-all px-3 py-2 align-top font-medium">{row.mid}</td>
                         <td className="break-words px-3 py-2 align-top">{row.studentName}</td>
+                        <td className="break-words px-3 py-2 align-top">{row.branch}</td>
                         <td className="break-words px-3 py-2 align-top">{row.workflow}</td>
                         <td className="break-words px-3 py-2 align-top">{row.currentStatus}</td>
                         <td className="px-3 py-2 align-top">
@@ -812,7 +841,7 @@ export default function Overview() {
                     ))}
                     {visibleDashboardRows.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-3 py-8 text-center text-sm text-ink-700/60">No records match the selected workflow and status.</td>
+                        <td colSpan={7} className="px-3 py-8 text-center text-sm text-ink-700/60">No records match the selected branch, workflow, and status.</td>
                       </tr>
                     )}
                       </tbody>

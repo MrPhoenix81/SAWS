@@ -53,7 +53,7 @@ export default function AuditLog() {
   }, [auditQuery.data, search, actionFilter, branchFilter]);
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-full min-h-0 flex-col gap-6">
       <div>
         <h2 className="font-display text-2xl">Audit log</h2>
         <p className="text-sm text-ink-700/60 mt-1">
@@ -97,7 +97,7 @@ export default function AuditLog() {
         </select>
       </div>
 
-      <div className="bg-white rounded-lg border border-ink-100 shadow-panel overflow-hidden overflow-x-auto">
+      <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-ink-100 bg-white shadow-panel">
         {auditQuery.isLoading && (
           <p className="text-sm text-ink-700/60 px-5 py-6">Loading audit log&hellip;</p>
         )}
@@ -108,7 +108,7 @@ export default function AuditLog() {
         {auditQuery.data && (
           <table className="w-full text-sm min-w-[800px]">
             <thead>
-              <tr className="border-b border-ink-100 text-left text-xs uppercase tracking-wide text-ink-700/50">
+              <tr className="sticky top-0 border-b border-ink-100 bg-white text-left text-xs uppercase tracking-wide text-ink-700/50">
                 <th className="px-4 py-3 font-medium">When</th>
                 <th className="px-4 py-3 font-medium">User</th>
                 <th className="px-4 py-3 font-medium">Action</th>

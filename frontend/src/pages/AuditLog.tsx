@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Search } from 'lucide-react';
 import { listAuditLogs, listBranches } from '@/lib/apiClient';
 
-const ACTIONS = ['LOGIN', 'LOGOUT', 'CREATE', 'UPDATE', 'DELETE'];
+const ACTIONS = ['LOGIN', 'LOGOUT', 'CREATE', 'UPDATE', 'DELETE', 'STAGE_TRANSITION'];
 
 function formatTimestamp(ts: string): string {
   const d = new Date(ts);
@@ -23,6 +23,7 @@ const ACTION_STYLES: Record<string, string> = {
   CREATE: 'bg-approve-light text-approve',
   UPDATE: 'bg-amber-light text-amber',
   DELETE: 'bg-reject-light text-reject',
+  STAGE_TRANSITION: 'bg-amber-light text-amber',
   PASSWORD_RESET_REQUESTED: 'bg-amber-light text-amber',
   PASSWORD_RESET: 'bg-amber-light text-amber'
 };
@@ -79,7 +80,7 @@ export default function AuditLog() {
           <option value="">All actions</option>
           {ACTIONS.map((a) => (
             <option key={a} value={a}>
-              {a}
+            {a.replace(/_/g, ' ')}
             </option>
           ))}
         </select>
@@ -127,7 +128,7 @@ export default function AuditLog() {
                         ACTION_STYLES[r.action] || 'bg-ink-100 text-ink-700/70'
                       }`}
                     >
-                      {r.action}
+                      {r.action.replace(/_/g, ' ')}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-ink-700/70">{r.details}</td>

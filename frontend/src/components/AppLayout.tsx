@@ -14,6 +14,7 @@ import {
   Building2,
   Database,
   Link2,
+  ClipboardList,
   type LucideIcon
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -235,14 +236,15 @@ export default function AppLayout() {
   const routerLocation = useLocation();
   // Discontinue / Inactive / Transfer pages keep the page itself fixed and
   // scroll only their table rows, so <main> must not scroll on these routes.
-  // Overview and the admin management pages (Users/Branches/Data) do the
-  // same: their header stays put while only the content below it scrolls.
+  // Overview and the admin pages do the same: their header stays put while
+  // only the content below it scrolls.
   const fixedHeightPage = [
     '/',
     '/students',
     '/inactive',
     '/transfer',
     '/admin/users',
+    '/admin/audit-log',
     '/admin/branches',
     '/admin/data'
   ].includes(routerLocation.pathname);
@@ -348,6 +350,9 @@ export default function AppLayout() {
               </p>
               {canManageUsers && (
                 <SidebarLink to="/admin/users" icon={UsersIcon} label="Manage users" />
+              )}
+              {canManageUsers && (
+                <SidebarLink to="/admin/audit-log" icon={ClipboardList} label="Audit log" />
               )}
               {canManageBranches && (
                 <SidebarLink to="/admin/branches" icon={Building2} label="Manage branches" />

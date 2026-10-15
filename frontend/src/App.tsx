@@ -17,6 +17,7 @@ import SystemLinks from './pages/SystemLinks';
 import Inactive from '@/pages/Inactive';
 import Transfer from '@/pages/Transfer';
 import NewEntry from '@/pages/NewEntry';
+import AuditLog from '@/pages/AuditLog';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -61,6 +62,14 @@ export default function App() {
                 element={
                   <ProtectedRoute allowedRoles={['Admin', 'Head Office']}>
                     <Users />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/audit-log"
+                element={
+                  <ProtectedRoute allowedRoles={['Admin', 'Head Office']}>
+                    <AuditLog />
                   </ProtectedRoute>
                 }
               />

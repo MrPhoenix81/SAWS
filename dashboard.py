@@ -47,7 +47,10 @@ def get_dashboard_data_(user, params=None):
         sources = {
             'Discontinue': (read_sheet_as_objects_(config.SHEET_RESPONSE), read_sheet_as_objects_(config.SHEET_COMPLETED),
                             config.STATUS_APPROVED),
-            'Inactive': (read_sheet_as_objects_(config.SHEET_INACTIVE_RESPONSE), read_sheet_as_objects_(config.SHEET_INACTIVE_COMPLETED),
+            'Inactive': ([r for r in read_sheet_as_objects_(config.SHEET_INACTIVE_RESPONSE)
+                          if r.get('Status') != config.STATUS_INACTIVE_CONVERTED],
+                         [r for r in read_sheet_as_objects_(config.SHEET_INACTIVE_COMPLETED)
+                          if r.get('Status') != config.STATUS_INACTIVE_CONVERTED],
                          config.STATUS_INACTIVE_APPROVED),
             'Transfer': (read_sheet_as_objects_(config.SHEET_TRANSFER_RESPONSE), read_sheet_as_objects_(config.SHEET_TRANSFER_COMPLETED),
                          config.STATUS_TRANSFER_APPROVED),
@@ -238,6 +241,9 @@ def get_dashboard_rows_(user, params=None):
         active_sheet, completed_sheet = sources[workflow]
         active = read_sheet_as_objects_(active_sheet)
         completed = read_sheet_as_objects_(completed_sheet)
+        if workflow == 'Inactive':
+            active = [row for row in active if row.get('Status') != config.STATUS_INACTIVE_CONVERTED]
+            completed = [row for row in completed if row.get('Status') != config.STATUS_INACTIVE_CONVERTED]
         scoped_rows = []
         if metric == 'approved':
             scoped_rows = [(row, 'completed') for row in completed]

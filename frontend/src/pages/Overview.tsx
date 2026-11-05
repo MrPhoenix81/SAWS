@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer,
@@ -16,6 +16,7 @@ import {
 } from 'recharts';
 import {
   Download,
+  Search,
   SlidersHorizontal,
   X,
   ChevronDown,
@@ -28,12 +29,23 @@ import {
   XCircle,
   CalendarDays,
   CalendarRange,
+  Loader2,
+  Trash2,
   type LucideIcon
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
-import { callApi, listBranches } from '@/lib/apiClient';
+import {
+  ApiError,
+  callApi,
+  convertInactiveToDiscontinue,
+  listBranches,
+  searchConvertibleInactive,
+  type ConvertibleInactiveStudent,
+  type InactiveConversionFields,
+  type ReasonScreenshot
+} from '@/lib/apiClient';
 import { readOverviewFilters, writeOverviewFilters } from '@/lib/sessionState';
 import { useAuth } from '@/context/AuthContext';
 import type { DashboardData } from '@/types';
@@ -82,6 +94,42 @@ function shadeForRank(index: number) {
 function labelColorForRank(index: number) {
   return index >= BLUE_SHADES.length - 2 ? '#0E1230' : '#fff';
 }
+
+function conversionErrorText(error: unknown) {
+  if (error instanceof ApiError) {
+    const messages: Record<string, string> = {
+      AUTH_FORBIDDEN: 'This student is not eligible for conversion, or you do not have permission.',
+      MID_CONFIRMATION_MISMATCH: 'The MID confirmation did not match.',
+      MID_ALREADY_EXISTS: 'This MID already has another workflow record.',
+      STUDENT_NOT_FOUND: 'This inactive student is no longer available for conversion.',
+      BAD_REQUEST: 'Enter the matching MID and a discontinuation reason.'
+    };
+    return messages[error.code] || `Could not convert the student (${error.code}).`;
+  }
+  return 'Could not convert the student. Please try again.';
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(',')[1] || '');
+    reader.onerror = () => reject(new Error('Could not read screenshot'));
+    reader.readAsDataURL(file);
+  });
+}
+
+const EMPTY_CONVERSION_FIELDS: InactiveConversionFields = {
+  studentName: '',
+  batchName: '',
+  facultyName: '',
+  phone1: '',
+  phone2: '',
+  phone3: '',
+  totalBilled: '',
+  totalPaid: '',
+  lastPresentDay: '',
+  reason: ''
+};
 
 /**
  * Builds a one-page PDF summary of the dashboard (KPI cards, status
@@ -161,6 +209,7 @@ function downloadOverviewPdf(
 export default function Overview() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   // Admin and Head Office see every branch by default and can narrow down
   // to one via the dropdown below. Every other role only ever sees their
   // own branch, so there's nothing for them to filter - just a download
@@ -180,6 +229,14 @@ export default function Overview() {
   const columnFilterMenuRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
+  const [inactiveMidSearch, setInactiveMidSearch] = useState('');
+  const [conversionTarget, setConversionTarget] = useState<ConvertibleInactiveStudent | null>(null);
+  const [conversionStep, setConversionStep] = useState<'details' | 'verify' | 'reason'>('details');
+  const [conversionMid, setConversionMid] = useState('');
+  const [conversionFields, setConversionFields] = useState<InactiveConversionFields>(EMPTY_CONVERSION_FIELDS);
+  const [conversionScreenshots, setConversionScreenshots] = useState<File[]>([]);
+  const [conversionScreenshotPreviews, setConversionScreenshotPreviews] = useState<string[]>([]);
+  const [conversionError, setConversionError] = useState('');
 
   // The Filters panel edits these "draft" copies and only commits them to
   // the real filter state (which actually re-queries) when "Apply filters"
@@ -234,6 +291,132 @@ export default function Overview() {
     queryFn: listBranches,
     enabled: hasFullVisibility
   });
+
+  const convertibleSearchQuery = useQuery({
+    queryKey: ['inactive-convertible-search', inactiveMidSearch.trim()],
+    queryFn: () => searchConvertibleInactive(inactiveMidSearch.trim()),
+    enabled: user?.role === 'SCM' && inactiveMidSearch.trim().length >= 2
+  });
+
+  const conversionMutation = useMutation({
+    mutationFn: async () => {
+      const screenshots: ReasonScreenshot[] = await Promise.all(
+        conversionScreenshots.map(async (file) => ({
+          base64: await fileToBase64(file),
+          mimeType: file.type
+        }))
+      );
+      return convertInactiveToDiscontinue(
+        conversionTarget!.MID,
+        conversionMid,
+        conversionFields,
+        screenshots
+      );
+    },
+    onSuccess: () => {
+      conversionScreenshotPreviews.forEach((url) => URL.revokeObjectURL(url));
+      setConversionTarget(null);
+      setConversionStep('details');
+      setConversionMid('');
+      setConversionFields(EMPTY_CONVERSION_FIELDS);
+      setConversionScreenshots([]);
+      setConversionScreenshotPreviews([]);
+      setConversionError('');
+      setInactiveMidSearch('');
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['inactive'] });
+      queryClient.invalidateQueries({ queryKey: ['inactive-convertible-search'] });
+      queryClient.invalidateQueries({ queryKey: ['activeCounts'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    },
+    onError: (error) => setConversionError(conversionErrorText(error))
+  });
+
+  function openConversion(student: ConvertibleInactiveStudent) {
+    setConversionTarget(student);
+    setConversionStep('details');
+    setConversionMid('');
+    setConversionFields({
+      studentName: student['Student Name'] || '',
+      batchName: student['Batch Name'] || '',
+      facultyName: student['Faculty Name'] || '',
+      phone1: student['Phone Number 1'] || '',
+      phone2: student['Phone Number 2'] || '',
+      phone3: student['Phone Number 3'] || '',
+      totalBilled: student['Total Billed'] === '' ? '' : String(student['Total Billed'] ?? ''),
+      totalPaid: student['Total Paid'] === '' ? '' : String(student['Total Paid'] ?? ''),
+      lastPresentDay: student['Last Present Day']?.slice(0, 10) || '',
+      reason: ''
+    });
+    setConversionScreenshots([]);
+    setConversionScreenshotPreviews([]);
+    setConversionError('');
+  }
+
+  function closeConversion() {
+    if (conversionMutation.isPending) return;
+    conversionScreenshotPreviews.forEach((url) => URL.revokeObjectURL(url));
+    setConversionTarget(null);
+    setConversionStep('details');
+    setConversionMid('');
+    setConversionFields(EMPTY_CONVERSION_FIELDS);
+    setConversionScreenshots([]);
+    setConversionScreenshotPreviews([]);
+    setConversionError('');
+  }
+
+  function updateConversionField<K extends keyof InactiveConversionFields>(
+    key: K,
+    value: InactiveConversionFields[K]
+  ) {
+    setConversionFields((current) => ({ ...current, [key]: value }));
+    setConversionError('');
+  }
+
+  function addConversionScreenshots(files: FileList | null) {
+    if (!files) return;
+    const selected = Array.from(files);
+    if (conversionScreenshots.length + selected.length > 6) {
+      setConversionError('You can attach up to 6 screenshots.');
+      return;
+    }
+    if (selected.some((file) => !['image/jpeg', 'image/png'].includes(file.type))) {
+      setConversionError('Only JPG and PNG screenshots are allowed.');
+      return;
+    }
+    if (selected.some((file) => file.size > 8 * 1024 * 1024)) {
+      setConversionError('Each screenshot must be under 8MB.');
+      return;
+    }
+    setConversionScreenshots((current) => [...current, ...selected]);
+    setConversionScreenshotPreviews((current) => [
+      ...current,
+      ...selected.map((file) => URL.createObjectURL(file))
+    ]);
+    setConversionError('');
+  }
+
+  function removeConversionScreenshot(index: number) {
+    const preview = conversionScreenshotPreviews[index];
+    if (preview) URL.revokeObjectURL(preview);
+    setConversionScreenshots((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    setConversionScreenshotPreviews((current) => current.filter((_, itemIndex) => itemIndex !== index));
+  }
+
+  function validateConversionDetails() {
+    if (!conversionFields.studentName.trim() || !conversionFields.phone1.trim() || !conversionFields.phone2.trim()) {
+      return 'Student name, Phone 1 (student) and Phone 2 (parent 1) are required.';
+    }
+    const phones = [conversionFields.phone1, conversionFields.phone2, conversionFields.phone3].filter(Boolean);
+    if (phones.some((phone) => !/^\d{10}$/.test(phone))) {
+      return 'Each phone number must contain exactly 10 digits.';
+    }
+    const amounts = [conversionFields.totalBilled, conversionFields.totalPaid].filter(Boolean);
+    if (amounts.some((amount) => !Number.isFinite(Number(amount)) || Number(amount) < 0)) {
+      return 'Total billed and total paid must be valid non-negative amounts.';
+    }
+    return null;
+  }
 
   // Item 9: Admin dashboard "System / Important Links" now lives at
   // its own page (/admin/links, Admin-only) - see SystemLinks.tsx.
@@ -499,6 +682,56 @@ export default function Overview() {
         {isLoading && <p className="text-sm text-ink-700/60">Loading dashboard…</p>}
         {isError && (
           <p className="text-sm text-reject">Couldn&rsquo;t load dashboard data. Please refresh.</p>
+        )}
+
+        {user?.role === 'SCM' && (
+          <section className="rounded-lg border border-ink-100 bg-white p-5 shadow-panel">
+            <h3 className="text-sm font-medium">Find an inactive student to discontinue</h3>
+            <p className="mt-1 text-xs text-ink-700/60">
+              Search approved inactive students by MID. Results are limited to your branch.
+            </p>
+            <div className="relative mt-3 max-w-xl">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-700/40" />
+              <input
+                type="search"
+                value={inactiveMidSearch}
+                onChange={(event) => setInactiveMidSearch(event.target.value)}
+                placeholder="Enter at least 2 MID characters"
+                className="w-full rounded-md border border-ink-200 py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-ink-900"
+              />
+            </div>
+            {inactiveMidSearch.trim().length === 1 && (
+              <p className="mt-2 text-xs text-ink-700/50">Enter at least 2 characters to search.</p>
+            )}
+            {convertibleSearchQuery.isFetching && (
+              <p className="mt-3 flex items-center gap-2 text-sm text-ink-700/60">
+                <Loader2 size={15} className="animate-spin" /> Searching…
+              </p>
+            )}
+            {convertibleSearchQuery.isError && (
+              <p className="mt-3 text-sm text-reject">Couldn&rsquo;t search inactive students. Please try again.</p>
+            )}
+            {convertibleSearchQuery.data && (
+              convertibleSearchQuery.data.length > 0 ? (
+                <ul className="mt-3 max-w-xl divide-y divide-ink-100 rounded-md border border-ink-100">
+                  {convertibleSearchQuery.data.map((student) => (
+                    <li key={student.MID}>
+                      <button
+                        type="button"
+                        onClick={() => openConversion(student)}
+                        className="w-full px-3 py-2.5 text-left hover:bg-paper"
+                      >
+                        <span className="block text-sm font-medium">{student['Student Name']}</span>
+                        <span className="mt-0.5 block font-mono text-xs text-ink-700/60">{student.MID}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-3 text-sm text-ink-700/60">No approved inactive students in your branch match that MID.</p>
+              )
+            )}
+          </section>
         )}
 
         {data && (
@@ -849,6 +1082,192 @@ export default function Overview() {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {conversionTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-950/45 p-4" role="dialog" aria-modal="true">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-panel">
+            <div className="flex items-start justify-between border-b border-ink-100 px-5 py-4">
+              <div>
+                <h3 className="font-display text-lg">Discontinue inactive student</h3>
+                <p className="mt-0.5 text-xs text-ink-700/60">{conversionTarget['Student Name']} · {conversionTarget.MID}</p>
+              </div>
+              <button type="button" onClick={closeConversion} aria-label="Close" className="text-ink-700/50 hover:text-ink-900">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="space-y-4 p-5">
+              {conversionStep === 'details' && (
+                <>
+                  <p className="text-sm text-ink-700/70">
+                    Review and complete the information required for discontinuation. MID and branch remain fixed to the inactive record.
+                  </p>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <label className="block space-y-1.5 text-sm">
+                      <span className="font-medium">MID</span>
+                      <input value={conversionTarget.MID} readOnly className="w-full rounded-md border border-ink-200 bg-paper px-3 py-2 font-mono text-sm" />
+                    </label>
+                    <label className="block space-y-1.5 text-sm">
+                      <span className="font-medium">Branch</span>
+                      <input value={conversionTarget.Branch} readOnly className="w-full rounded-md border border-ink-200 bg-paper px-3 py-2 text-sm" />
+                    </label>
+                    <label className="block space-y-1.5 text-sm">
+                      <span className="font-medium">Student name <span className="text-reject">*</span></span>
+                      <input required value={conversionFields.studentName} onChange={(event) => updateConversionField('studentName', event.target.value)} className="w-full rounded-md border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ink-900" />
+                    </label>
+                    <label className="block space-y-1.5 text-sm">
+                      <span className="font-medium">Batch name</span>
+                      <input value={conversionFields.batchName} onChange={(event) => updateConversionField('batchName', event.target.value)} className="w-full rounded-md border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ink-900" />
+                    </label>
+                    <label className="block space-y-1.5 text-sm">
+                      <span className="font-medium">Faculty name</span>
+                      <input value={conversionFields.facultyName} onChange={(event) => updateConversionField('facultyName', event.target.value)} className="w-full rounded-md border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ink-900" />
+                    </label>
+                    <label className="block space-y-1.5 text-sm">
+                      <span className="font-medium">Last present day</span>
+                      <input type="date" value={conversionFields.lastPresentDay} onChange={(event) => updateConversionField('lastPresentDay', event.target.value)} className="w-full rounded-md border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ink-900" />
+                    </label>
+                    <label className="block space-y-1.5 text-sm">
+                      <span className="font-medium">Phone 1 (student) <span className="text-reject">*</span></span>
+                      <input required maxLength={10} inputMode="numeric" pattern="[0-9]{10}" value={conversionFields.phone1} onChange={(event) => updateConversionField('phone1', event.target.value.replace(/\D/g, '').slice(0, 10))} className="w-full rounded-md border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ink-900" />
+                    </label>
+                    <label className="block space-y-1.5 text-sm">
+                      <span className="font-medium">Phone 2 (parent 1) <span className="text-reject">*</span></span>
+                      <input required maxLength={10} inputMode="numeric" pattern="[0-9]{10}" value={conversionFields.phone2} onChange={(event) => updateConversionField('phone2', event.target.value.replace(/\D/g, '').slice(0, 10))} className="w-full rounded-md border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ink-900" />
+                    </label>
+                    <label className="block space-y-1.5 text-sm">
+                      <span className="font-medium">Phone 3 (parent 2)</span>
+                      <input maxLength={10} inputMode="numeric" pattern="[0-9]{10}" value={conversionFields.phone3} onChange={(event) => updateConversionField('phone3', event.target.value.replace(/\D/g, '').slice(0, 10))} className="w-full rounded-md border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ink-900" />
+                    </label>
+                    <label className="block space-y-1.5 text-sm">
+                      <span className="font-medium">Total billed</span>
+                      <input type="number" min="0" step="any" value={conversionFields.totalBilled} onChange={(event) => updateConversionField('totalBilled', event.target.value)} className="w-full rounded-md border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ink-900" />
+                    </label>
+                    <label className="block space-y-1.5 text-sm">
+                      <span className="font-medium">Total paid</span>
+                      <input type="number" min="0" step="any" value={conversionFields.totalPaid} onChange={(event) => updateConversionField('totalPaid', event.target.value)} className="w-full rounded-md border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ink-900" />
+                    </label>
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <button type="button" onClick={closeConversion} className="rounded-md border border-ink-200 px-4 py-2 text-sm">Cancel</button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const message = validateConversionDetails();
+                        if (message) {
+                          setConversionError(message);
+                          return;
+                        }
+                        setConversionError('');
+                        setConversionStep('verify');
+                      }}
+                      className="rounded-md bg-ink-900 px-4 py-2 text-sm text-white"
+                    >
+                      Discontinue
+                    </button>
+                  </div>
+                </>
+              )}
+              {conversionStep === 'verify' && (
+                <>
+                  <label className="block text-sm">
+                    Type the student&rsquo;s MID to verify this action.
+                    <input
+                      autoFocus
+                      value={conversionMid}
+                      onChange={(event) => { setConversionMid(event.target.value); setConversionError(''); }}
+                      placeholder={conversionTarget.MID}
+                      className="mt-2 w-full rounded-md border border-ink-200 px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-ink-900"
+                    />
+                  </label>
+                  <div className="flex justify-end gap-2">
+                    <button type="button" onClick={() => setConversionStep('details')} className="rounded-md border border-ink-200 px-4 py-2 text-sm">Back</button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (conversionMid.trim() !== conversionTarget.MID) {
+                          setConversionError('The MID does not match. Please type it exactly as shown.');
+                          return;
+                        }
+                        setConversionError('');
+                        setConversionStep('reason');
+                      }}
+                      disabled={conversionMid.trim() !== conversionTarget.MID}
+                      className="rounded-md bg-ink-900 px-4 py-2 text-sm text-white disabled:opacity-40"
+                    >
+                      Continue
+                    </button>
+                  </div>
+                </>
+              )}
+              {conversionStep === 'reason' && (
+                <>
+                  <label className="block text-sm">
+                    Discontinuation reason
+                    <textarea
+                      autoFocus
+                      value={conversionFields.reason}
+                      onChange={(event) => { updateConversionField('reason', event.target.value); setConversionError(''); }}
+                      rows={5}
+                      placeholder="Enter the reason for discontinuation"
+                      className="mt-2 w-full resize-y rounded-md border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ink-900"
+                    />
+                  </label>
+                  <div>
+                    <label className="block text-sm font-medium">Call log screenshots (optional)</label>
+                    <p className="mt-1 text-xs text-ink-700/60">Attach up to 6 JPG or PNG images to support the discontinuation reason.</p>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png"
+                      multiple
+                      onChange={(event) => { addConversionScreenshots(event.target.files); event.currentTarget.value = ''; }}
+                      className="mt-2 block w-full text-sm text-ink-700/80 file:mr-3 file:rounded-md file:border-0 file:bg-ink-900 file:px-3 file:py-2 file:text-sm file:text-white"
+                    />
+                    {conversionScreenshotPreviews.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {conversionScreenshotPreviews.map((preview, index) => (
+                          <div key={preview} className="relative">
+                            <img src={preview} alt={`Call log screenshot ${index + 1}`} className="h-20 w-20 rounded-md border border-ink-200 object-cover" />
+                            <button
+                              type="button"
+                              onClick={() => removeConversionScreenshot(index)}
+                              aria-label={`Remove screenshot ${index + 1}`}
+                              className="absolute -right-1.5 -top-1.5 rounded-full bg-white p-1 text-reject shadow"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-xs text-ink-700/60">
+                    The new entry starts at Pending HOF &amp; Manager. Their approval steps remain unchanged.
+                  </p>
+                  <div className="flex justify-end gap-2">
+                    <button type="button" onClick={() => setConversionStep('verify')} disabled={conversionMutation.isPending} className="rounded-md border border-ink-200 px-4 py-2 text-sm">Back</button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!conversionFields.reason.trim()) {
+                          setConversionError('Discontinuation reason is required.');
+                          return;
+                        }
+                        conversionMutation.mutate();
+                      }}
+                      disabled={!conversionFields.reason.trim() || conversionMutation.isPending}
+                      className="inline-flex items-center gap-2 rounded-md bg-ink-900 px-4 py-2 text-sm text-white disabled:opacity-40"
+                    >
+                      {conversionMutation.isPending && <Loader2 size={15} className="animate-spin" />}
+                      {conversionMutation.isPending ? 'Submitting…' : 'Submit for approval'}
+                    </button>
+                  </div>
+                </>
+              )}
+              {conversionError && <p role="alert" className="text-sm text-reject">{conversionError}</p>}
             </div>
           </div>
         </div>

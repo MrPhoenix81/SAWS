@@ -224,3 +224,13 @@ Manager → Head Office → Admin), Inactive requests, Transfers, Users,
 Branches, Notifications, Audit Log, login/forgot-password — works
 exactly the same from the app's point of view. Only where the data is
 stored changed.
+
+SCMs may convert an approved inactive student from the dashboard by
+searching the student's MID. The conversion is restricted to their own
+branch, requires the MID to be re-entered and a new discontinuation
+reason, and starts the standard workflow at Pending HOF & Manager. The
+converted inactive record remains as a hidden marker with its inactive
+reason cleared; it is excluded from inactive lists and dashboard totals.
+Before conversion, SCM can review and edit the student name, batch,
+faculty, phone numbers, billing totals, last-present date, and new
+discontinuation reason. Optional call-log screenshots can also be added.

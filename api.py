@@ -36,6 +36,7 @@ from inactive import (
     submit_inactive_, list_inactive_, head_office_approve_inactive_, head_office_reject_inactive_,
     admin_approve_inactive_, admin_reject_inactive_, admin_update_inactive_, head_office_update_inactive_, delete_inactive_,
     submit_inactive_correction_, get_inactive_screenshot_url_,
+    search_convertible_inactive_, convert_inactive_to_discontinue_,
 )
 from transfer import (
     submit_transfer_, list_transfer_, head_office_approve_transfer_, head_office_reject_transfer_, head_office_update_transfer_,
@@ -60,7 +61,7 @@ KNOWN_ERROR_CODES = {
     'UNKNOWN_ACTION', 'AUTH_INVALID_CREDENTIALS', 'PASSWORD_TOO_SHORT',
     'AUTH_INVALID_RESET_TOKEN', 'MID_ALREADY_EXISTS', 'AUTH_INVALID_TOKEN', 'AUTH_NOT_REGISTERED',
     'REASON_UNCHANGED', 'PASSWORD_TOO_SHORT', 'PASSWORD_REQUIRED', 'SCREENSHOT_REQUIRED',
-    'SCREENSHOT_UPLOAD_FAILED',
+    'SCREENSHOT_UPLOAD_FAILED', 'MID_CONFIRMATION_MISMATCH',
 }
 
 
@@ -217,6 +218,13 @@ def route_action_(action, user, payload):
         return list_inactive_(user, False, payload)
     if action == 'inactive.listCompleted':
         return list_inactive_(user, True, payload)
+    if action == 'inactive.searchConvertible':
+        return search_convertible_inactive_(user, payload.get('query'))
+    if action == 'inactive.convertToDiscontinue':
+        return convert_inactive_to_discontinue_(
+            user, payload.get('mid'), payload.get('confirmMid'),
+            payload.get('fields'), payload.get('screenshots'), payload.get('browser')
+        )
     if action == 'inactive.headOfficeApprove':
         return head_office_approve_inactive_(user, payload.get('mid'), payload.get('browser'))
     if action == 'inactive.headOfficeReject':

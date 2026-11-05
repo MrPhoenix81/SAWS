@@ -485,6 +485,33 @@ export interface InactiveSubmitPayload {
   screenshots?: ReasonScreenshot[];
 }
 
+export interface ConvertibleInactiveStudent {
+  MID: string;
+  'Student Name': string;
+  Branch: string;
+  'Batch Name'?: string;
+  'Faculty Name'?: string;
+  'Phone Number 1'?: string;
+  'Phone Number 2'?: string;
+  'Phone Number 3'?: string;
+  'Total Billed'?: number | string;
+  'Total Paid'?: number | string;
+  'Last Present Day'?: string;
+}
+
+export interface InactiveConversionFields {
+  studentName: string;
+  batchName: string;
+  facultyName: string;
+  phone1: string;
+  phone2: string;
+  phone3: string;
+  totalBilled: string;
+  totalPaid: string;
+  lastPresentDay: string;
+  reason: string;
+}
+
 export interface InactiveEditFields {
   MID?: string;
   'Student Name'?: string;
@@ -505,6 +532,24 @@ export async function listInactive(
     action,
     params as unknown as Record<string, unknown>
   );
+}
+
+export async function searchConvertibleInactive(query: string) {
+  return callApi<ConvertibleInactiveStudent[]>('inactive.searchConvertible', { query });
+}
+
+export async function convertInactiveToDiscontinue(
+  mid: string,
+  confirmMid: string,
+  fields: InactiveConversionFields,
+  screenshots?: ReasonScreenshot[]
+) {
+  return callApi<{ success: true }>('inactive.convertToDiscontinue', {
+    mid,
+    confirmMid,
+    fields,
+    screenshots
+  });
 }
 
 export async function submitInactive(payload: InactiveSubmitPayload) {

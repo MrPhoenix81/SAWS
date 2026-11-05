@@ -427,6 +427,33 @@ def append_row_(name, row_obj):
     return count
 
 
+def convert_inactive_row_to_discontinue_(inactive_row_id, inactive_updates, discontinue_row):
+    """Atomically mark an approved inactive row converted and create its
+    active discontinuation row."""
+    ensure_sheets_exist_()
+    with get_conn_() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                'UPDATE sheet_rows SET data = data || %s::jsonb '
+                'WHERE id = %s AND sheet_name = %s AND data->>\'Status\' = %s '
+                'RETURNING id',
+                (
+                    json.dumps(inactive_updates, default=str),
+                    inactive_row_id,
+                    config.SHEET_INACTIVE_COMPLETED,
+                    config.STATUS_INACTIVE_APPROVED,
+                ),
+            )
+            if cur.fetchone() is None:
+                return False
+            cur.execute(
+                'INSERT INTO sheet_rows (sheet_name, data) VALUES (%s, %s::jsonb)',
+                (config.SHEET_RESPONSE, json.dumps(discontinue_row, default=str)),
+            )
+    invalidate_sheet_cache_([config.SHEET_INACTIVE_COMPLETED, config.SHEET_RESPONSE])
+    return True
+
+
 def update_row_fields_(name, row_number, fields):
     """Updates specific fields (by field name) on a given row id."""
     if not fields:

@@ -11,12 +11,15 @@ moved to InactiveCompleted.
 """
 from datetime import datetime
 import base64
+import math
 
 import config
 import storage
 from db_utils import (
     read_sheet_as_objects_, append_row_, update_row_fields_, delete_row_,
     invalidate_cache_, now_iso_, format_date_only_, screenshot_keys_, collect_screenshot_keys_,
+    mid_exists_anywhere_, convert_inactive_row_to_discontinue_,
+    validate_phone_numbers_,
 )
 from auth import ApiError, require_role_
 from audit_log import log_audit_
@@ -97,10 +100,10 @@ def _find_any_(mid, preferred='active'):
         else config.SHEET_INACTIVE_COMPLETED
     )
     row = _find_row_(preferred_sheet, mid)
-    if row:
+    if row and row.get('Status') != config.STATUS_INACTIVE_CONVERTED:
         return preferred_sheet, row
     row = _find_row_(other_sheet, mid)
-    if row:
+    if row and row.get('Status') != config.STATUS_INACTIVE_CONVERTED:
         return other_sheet, row
     raise ApiError('STUDENT_NOT_FOUND')
 
@@ -248,6 +251,7 @@ def list_inactive_(user, completed=False, params=None):
     params = params or {}
     sheet = config.SHEET_INACTIVE_COMPLETED if completed else config.SHEET_INACTIVE_RESPONSE
     rows = read_sheet_as_objects_(sheet)
+    rows = [r for r in rows if r.get('Status') != config.STATUS_INACTIVE_CONVERTED]
 
     if user['role'] not in config.GLOBAL_VISIBILITY_ROLES:
         rows = [r for r in rows if r.get('Branch') == user.get('branch')]
@@ -325,6 +329,179 @@ def list_inactive_(user, completed=False, params=None):
         'rows': [_serialize_(r, user) for r in page_rows],
         'pendingForMe': pending_for_me,
     }
+
+
+def search_convertible_inactive_(user, query):
+    """Search approved inactive records for an SCM within their own branch."""
+    require_role_(user, [config.ROLE_SCM])
+    term = str(query or '').strip().lower()
+    if not term:
+        raise ApiError('BAD_REQUEST')
+
+    rows = read_sheet_as_objects_(config.SHEET_INACTIVE_COMPLETED)
+    matches = [
+        row for row in rows
+        if row.get('Branch') == user.get('branch')
+        and row.get('Status') == config.STATUS_INACTIVE_APPROVED
+        and term in str(row.get('MID') or '').strip().lower()
+    ]
+    matches.sort(key=lambda row: str(row.get('Student Name') or '').lower())
+    return [
+        {
+            'MID': str(row.get('MID') or '').strip(),
+            'Student Name': str(row.get('Student Name') or ''),
+            'Branch': str(row.get('Branch') or ''),
+            'Batch Name': str(row.get('Batch Name') or ''),
+            'Faculty Name': str(row.get('Faculty Name') or ''),
+            'Phone Number 1': str(row.get('Phone Number 1') or ''),
+            'Phone Number 2': str(row.get('Phone Number 2') or ''),
+            'Phone Number 3': str(row.get('Phone Number 3') or ''),
+            'Total Billed': row.get('Total Billed', ''),
+            'Total Paid': row.get('Total Paid', ''),
+            'Last Present Day': str(row.get('Last Present Day') or ''),
+        }
+        for row in matches[:20]
+    ]
+
+
+def convert_inactive_to_discontinue_(user, mid, confirm_mid, fields, screenshots, browser):
+    """Convert an approved inactive record to the normal SCM discontinuation workflow."""
+    require_role_(user, [config.ROLE_SCM])
+    normalized_mid = str(mid or '').strip()
+    if not normalized_mid or str(confirm_mid or '').strip() != normalized_mid:
+        raise ApiError('MID_CONFIRMATION_MISMATCH')
+    if not isinstance(fields, dict):
+        raise ApiError('BAD_REQUEST')
+
+    student_name = str(fields.get('studentName') or '').strip()
+    reason = str(fields.get('reason') or '').strip()
+    try:
+        phone1, phone2, phone3 = validate_phone_numbers_(
+            fields.get('phone1'), fields.get('phone2'), fields.get('phone3')
+        )
+    except ValueError as exc:
+        raise ApiError('BAD_REQUEST') from exc
+    if not reason:
+        raise ApiError('BAD_REQUEST')
+    if not student_name:
+        raise ApiError('BAD_REQUEST')
+
+    try:
+        total_billed = float(fields.get('totalBilled') or 0)
+        total_paid = float(fields.get('totalPaid') or 0)
+    except (TypeError, ValueError) as exc:
+        raise ApiError('BAD_REQUEST') from exc
+    if not math.isfinite(total_billed) or not math.isfinite(total_paid) or total_billed < 0 or total_paid < 0:
+        raise ApiError('BAD_REQUEST')
+
+    row = _find_row_(config.SHEET_INACTIVE_COMPLETED, normalized_mid)
+    if not row:
+        raise ApiError('STUDENT_NOT_FOUND')
+    if row.get('Branch') != user.get('branch'):
+        raise ApiError('AUTH_FORBIDDEN')
+    if row.get('Status') != config.STATUS_INACTIVE_APPROVED:
+        raise ApiError('AUTH_FORBIDDEN')
+    if mid_exists_anywhere_(
+        normalized_mid, config.SHEET_INACTIVE_COMPLETED, row.get('__row')
+    ):
+        raise ApiError('MID_ALREADY_EXISTS')
+
+    now = now_iso_()
+    response_rows = read_sheet_as_objects_(config.SHEET_RESPONSE)
+    next_sl_no = max(
+        (int(candidate.get('Sl No') or 0) for candidate in response_rows),
+        default=0,
+    ) + 1
+    from students import _normalize_screenshot_list_, _upload_reason_screenshots_
+
+    screenshot_list = _normalize_screenshot_list_(screenshots, None)
+    screenshot_keys = _upload_reason_screenshots_(
+        normalized_mid, config.ROLE_SCM, screenshot_list
+    )
+    inactive_screenshot_keys = screenshot_keys_(
+        row.get(config.SCREENSHOT_FIELD_INACTIVE)
+    )
+    last_present_day = (
+        fields.get('lastPresentDay')
+        if 'lastPresentDay' in fields
+        else row.get('Last Present Day') or ''
+    )
+    discontinue_row = {
+        'Sl No': next_sl_no,
+        'Branch': row['Branch'],
+        'Batch Name': str(row.get('Batch Name') or '').strip(),
+        'Faculty Name': str(row.get('Faculty Name') or '').strip(),
+        'MID': normalized_mid,
+        'Student Name': student_name,
+        'Phone Number 1': phone1,
+        'Phone Number 2': phone2,
+        'Phone Number 3': phone3,
+        'Status': config.STATUS_PENDING_HOF_MANAGER,
+        'Total Billed': total_billed,
+        'Total Paid': total_paid,
+        'Arrear': total_billed - total_paid,
+        'Last Present Day': format_date_only_(last_present_day) if last_present_day else '',
+        'Days Since Present': days_since_last_present_(
+            {'Last Present Day': last_present_day}
+        ),
+        'Entry Date': now,
+        'Reason (SCM)': reason,
+        'SCM Updated Date': now,
+        config.SCREENSHOT_FIELD_SCM: screenshot_keys,
+        'Reason (HOF)': '',
+        'HOF Updated Date': '',
+        config.SCREENSHOT_FIELD_HOF: '',
+        'Reason (Manager)': '',
+        'Manager Updated Date': '',
+        config.SCREENSHOT_FIELD_MANAGER: '',
+        'Head Office Decision': '',
+        'Head Office Name': '',
+        'Head Office Date': '',
+        'Admin Approval': '',
+        'Admin Name': '',
+        'Approval Date': '',
+        'Last Rejection Reason': '',
+        'Last Rejected By': '',
+        'Last Rejected Stage': '',
+        'Last Rejected Date': '',
+        'Rejected Roles': '',
+    }
+    discontinue_row['Batch Name'] = str(fields.get('batchName') or '').strip()
+    discontinue_row['Faculty Name'] = str(fields.get('facultyName') or '').strip()
+
+    inactive_updates = {
+        'Status': config.STATUS_INACTIVE_CONVERTED,
+        'MID': '',
+        'Reason': '',
+        config.SCREENSHOT_FIELD_INACTIVE: '',
+        'Converted Date': now,
+        'Converted By': user.get('email') or '',
+        'Converted To Discontinue MID': normalized_mid,
+    }
+    if not convert_inactive_row_to_discontinue_(
+        row['__row'], inactive_updates, discontinue_row
+    ):
+        raise ApiError('AUTH_FORBIDDEN')
+    storage.delete_screenshots_(inactive_screenshot_keys)
+
+    notify_branch_roles_(
+        row['Branch'], [config.ROLE_HOF, config.ROLE_MANAGER],
+        f"New discontinuation entry submitted for {row['Student Name']} ({normalized_mid})",
+        config.NOTIF_SUBMITTED, normalized_mid, config.PAGE_DISCONTINUE
+    )
+    log_audit_(
+        user['email'], 'CREATE',
+        f"Converted inactive student {normalized_mid} to discontinuation; inactive reason cleared",
+        row['Branch'], browser
+    )
+    log_audit_(
+        user['email'], 'STAGE_TRANSITION',
+        f"{normalized_mid}: {config.STATUS_LABELS[config.STATUS_INACTIVE_APPROVED]} -> "
+        f"{config.STATUS_LABELS[config.STATUS_PENDING_HOF_MANAGER]}",
+        row['Branch'], browser
+    )
+    invalidate_cache_(['dashboard_' + row['Branch'], 'dashboard_ALL'])
+    return {'success': True}
 
 
 def head_office_approve_inactive_(user, mid, browser):

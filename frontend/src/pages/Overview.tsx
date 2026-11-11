@@ -48,6 +48,7 @@ import {
 } from '@/lib/apiClient';
 import { readOverviewFilters, writeOverviewFilters } from '@/lib/sessionState';
 import { useAuth } from '@/context/AuthContext';
+import GlobalMidSearch from '@/components/GlobalMidSearch';
 import type { DashboardData } from '@/types';
 
 type OverviewMetric = 'pending' | 'awaitingAdminApproval' | 'approved' | 'rejected' | 'todaysEntries' | 'monthlyEntries';
@@ -539,7 +540,8 @@ export default function Overview() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {hasFullVisibility && <GlobalMidSearch />}
           <button
             onClick={openFilters}
             className="flex items-center gap-1.5 rounded-md border border-ink-200 px-3 py-1.5 text-xs text-ink-700/80 hover:bg-paper transition-colors"

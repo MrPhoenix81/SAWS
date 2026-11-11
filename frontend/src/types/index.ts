@@ -67,6 +67,9 @@ export interface StudentEntry {
    * old is this entry". Blank on rows created before this field existed.
    */
   'Entry Date'?: string;
+  'Inactive From'?: string;
+  'Inactive To'?: string;
+  'Discontinue Converted Date'?: string;
   'Reason (SCM)'?: string;
   'SCM Updated Date'?: string;
   'Reason (HOF)'?: string; // Admin/Head Office-facing only

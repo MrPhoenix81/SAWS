@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import config
 import inactive
+import students
 from auth import ApiError
 
 
@@ -22,6 +23,7 @@ class InactiveConversionTests(unittest.TestCase):
             'Status': config.STATUS_INACTIVE_APPROVED,
             'Reason': 'Old inactive reason',
             'Last Present Day': '2026-01-02',
+            'Approval Date': '2026-01-10T09:30:00',
             'Batch Name': 'Batch A',
             'Faculty Name': 'Faculty A',
             'Phone Number 1': '1234567890',
@@ -115,6 +117,9 @@ class InactiveConversionTests(unittest.TestCase):
         self.assertEqual(inactive_updates['MID'], '')
         self.assertEqual(inactive_updates['Reason'], '')
         self.assertEqual(discontinue_row['Status'], config.STATUS_PENDING_HOF_MANAGER)
+        self.assertEqual(discontinue_row['Inactive From'], '2026-01-02')
+        self.assertEqual(discontinue_row['Inactive To'], '2026-01-10T09:30:00')
+        self.assertEqual(discontinue_row['Discontinue Converted Date'], '2026-11-05T12:00:00')
         self.assertEqual(discontinue_row['Reason (SCM)'], 'New discontinue reason')
         self.assertEqual(discontinue_row['Student Name'], 'Edited Student')
         self.assertEqual(discontinue_row['Batch Name'], 'Batch B')
@@ -127,6 +132,30 @@ class InactiveConversionTests(unittest.TestCase):
         self.assertEqual(discontinue_row[config.SCREENSHOT_FIELD_SCM], ['scm-image-key'])
         self.assertEqual(discontinue_row['Reason (HOF)'], '')
         self.assertEqual(discontinue_row['Reason (Manager)'], '')
+
+    def test_existing_conversions_include_dates_from_the_inactive_record(self):
+        student_rows = [{'MID': 'MID123'}]
+        converted_inactive_row = {
+            'Status': config.STATUS_INACTIVE_CONVERTED,
+            'Last Present Day': '2026-01-02',
+            'Approval Date': '2026-01-10T09:30:00',
+            'Converted Date': '2026-11-05T12:00:00',
+            'Converted To Discontinue MID': 'MID123',
+        }
+        with patch.object(
+            students,
+            'read_sheet_as_objects_',
+            return_value=[converted_inactive_row],
+        ):
+            result = students._attach_inactive_conversion_dates_(student_rows)
+
+        self.assertEqual(result[0]['Inactive From'], '2026-01-02')
+        self.assertEqual(result[0]['Inactive To'], '2026-01-10T09:30:00')
+        self.assertEqual(
+            result[0]['Discontinue Converted Date'],
+            '2026-11-05T12:00:00',
+        )
+        self.assertNotIn('Inactive From', student_rows[0])
 
 
 if __name__ == '__main__':

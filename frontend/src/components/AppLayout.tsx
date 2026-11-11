@@ -375,7 +375,7 @@ export default function AppLayout() {
         <header className="h-12 shrink-0 border-b border-ink-100 bg-white flex items-center justify-between px-5">
           <h1 className="font-display text-base leading-tight">{pageTitle}</h1>
 
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <NotificationBell />
             <div className="relative" ref={menuRef}>
               <button

@@ -1174,6 +1174,16 @@ function formatUpdatedAt(value?: string) {
   return d.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+function formatWorkflowDate(value?: string) {
+  if (!value) return '—';
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const d = new Date(dateOnly ? `${value}T00:00:00` : value);
+  if (isNaN(d.getTime())) return value;
+  return dateOnly
+    ? d.toLocaleDateString('en-IN', { dateStyle: 'medium' })
+    : d.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
 function ReasonBox({
   label, value, defaultOpen = false, updatedAt, imageSlot
 }: { label: string; value?: string; defaultOpen?: boolean; updatedAt?: string; imageSlot?: React.ReactNode }) {
@@ -1307,6 +1317,11 @@ function StudentDetailsModal({
               <p>Last present: {row['Last Present Day'] || '—'}</p>
               <p>Days Since Last Present: {row['Days Since Last Present'] ?? row['Days Since Present'] ?? '—'}</p>
               <p>Entry date: {row['Entry Date'] ? new Date(row['Entry Date']).toLocaleDateString() : '—'}</p>
+              {row['Discontinue Converted Date'] && <>
+                <p>Inactive from: {formatWorkflowDate(row['Inactive From'])}</p>
+                <p>Inactive to: {formatWorkflowDate(row['Inactive To'])}</p>
+                <p>Discontinue converted: {formatWorkflowDate(row['Discontinue Converted Date'])}</p>
+              </>}
               {showsBillingColumns(user?.role) && <>
                 <p>Total billed: ₹{Number(row['Total Billed'] || 0).toLocaleString('en-IN')}</p>
                 <p>Total paid: ₹{Number(row['Total Paid'] || 0).toLocaleString('en-IN')}</p>
@@ -1465,6 +1480,11 @@ function StudentExpandedDetails({
               <p>Last present: {row['Last Present Day'] || '—'}</p>
               <p>Days Since Last Present: {row['Days Since Last Present'] ?? row['Days Since Present'] ?? '—'}</p>
               <p>Entry date: {row['Entry Date'] ? new Date(row['Entry Date']).toLocaleDateString() : '—'}</p>
+              {row['Discontinue Converted Date'] && <>
+                <p>Inactive from: {formatWorkflowDate(row['Inactive From'])}</p>
+                <p>Inactive to: {formatWorkflowDate(row['Inactive To'])}</p>
+                <p>Discontinue converted: {formatWorkflowDate(row['Discontinue Converted Date'])}</p>
+              </>}
               {showsBillingColumns(user?.role) && <>
                 <p>Total billed: ₹{Number(row['Total Billed'] || 0).toLocaleString('en-IN')}</p>
                 <p>Total paid: ₹{Number(row['Total Paid'] || 0).toLocaleString('en-IN')}</p>

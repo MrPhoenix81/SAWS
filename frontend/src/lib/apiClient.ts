@@ -356,6 +356,19 @@ export async function listStudents(sheet: 'response' | 'completed', params: Stud
   return callApi<StudentListResult>(action, params as unknown as Record<string, unknown>);
 }
 
+export interface GlobalMidSearchResult {
+  MID: string;
+  results: Array<{
+    workflow: 'Discontinue' | 'Inactive' | 'Transfer';
+    tab: 'active' | 'completed';
+    record: Record<string, unknown>;
+  }>;
+}
+
+export async function searchRecordsByMid(mid: string) {
+  return callApi<GlobalMidSearchResult>('records.searchByMid', { mid });
+}
+
 /** SCM (or Admin, on a branch's behalf) creates a new discontinuation entry. */
 export async function submitStudentEntry(payload: SubmitStudentPayload) {
   return callApi<{ success: true }>('students.submit', payload as unknown as Record<string, unknown>);

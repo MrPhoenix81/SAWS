@@ -790,6 +790,8 @@ def list_students_(user, sheet_name, params):
     """List entries visible to this user, with optional search/filter params."""
     params = params or {}
     rows = read_sheet_as_objects_(sheet_name)
+    if sheet_name in (config.SHEET_RESPONSE, config.SHEET_COMPLETED):
+        rows = _attach_inactive_conversion_dates_(rows)
 
     # Single combined search box from the frontend: OR-match against
     # MID, Student Name, and all three phone numbers (see apiClient.ts /
@@ -914,6 +916,34 @@ def list_students_(user, sheet_name, params):
     page_rows = filtered[start:start + page_size]
 
     return {'total': len(filtered), 'page': page, 'pageSize': page_size, 'rows': page_rows, 'pendingForMe': pending_for_me}
+
+
+def _attach_inactive_conversion_dates_(student_rows):
+    """Include conversion dates for older discontinue rows created from inactive records."""
+    converted_rows = read_sheet_as_objects_(config.SHEET_INACTIVE_COMPLETED)
+    dates_by_mid = {}
+    for inactive_row in converted_rows:
+        converted_mid = str(inactive_row.get('Converted To Discontinue MID') or '').strip()
+        if not converted_mid or not inactive_row.get('Converted Date'):
+            continue
+        dates_by_mid[converted_mid] = {
+            'Inactive From': inactive_row.get('Last Present Day') or '',
+            'Inactive To': inactive_row.get('Approval Date') or '',
+            'Discontinue Converted Date': inactive_row.get('Converted Date') or '',
+        }
+
+    attached_rows = []
+    for row in student_rows:
+        dates = dates_by_mid.get(str(row.get('MID') or '').strip())
+        if not dates:
+            attached_rows.append(row)
+            continue
+        attached_row = dict(row)
+        for field, value in dates.items():
+            if not attached_row.get(field):
+                attached_row[field] = value
+        attached_rows.append(attached_row)
+    return attached_rows
 
 
 STUDENT_SORT_NUMERIC_FIELDS = ['Sl No', 'Total Billed', 'Total Paid', 'Arrear', 'Days Since Present']

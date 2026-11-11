@@ -445,6 +445,9 @@ def convert_inactive_to_discontinue_(user, mid, confirm_mid, fields, screenshots
             {'Last Present Day': last_present_day}
         ),
         'Entry Date': now,
+        'Inactive From': format_date_only_(row.get('Last Present Day')) if row.get('Last Present Day') else '',
+        'Inactive To': row.get('Approval Date') or '',
+        'Discontinue Converted Date': now,
         'Reason (SCM)': reason,
         'SCM Updated Date': now,
         config.SCREENSHOT_FIELD_SCM: screenshot_keys,

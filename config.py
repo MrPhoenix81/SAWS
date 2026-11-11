@@ -223,7 +223,7 @@ STUDENT_COLUMNS = [
     'Phone Number 1', 'Phone Number 2', 'Phone Number 3',
     'Status', 'Total Billed', 'Total Paid', 'Arrear',
     'Last Present Day', 'Days Since Present',
-    'Entry Date',
+    'Entry Date', 'Inactive From', 'Inactive To', 'Discontinue Converted Date',
     'Reason (SCM)', 'SCM Updated Date',
     'Reason (HOF)', 'HOF Updated Date',
     'Reason (Manager)', 'Manager Updated Date',

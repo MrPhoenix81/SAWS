@@ -50,6 +50,7 @@ from students import (
     delete_student_entry_, get_reason_screenshot_url_,
 )
 from bulk import bulk_template_, bulk_export_, bulk_import_, bulk_delete_
+from record_search import search_records_by_mid_
 
 api_bp = Blueprint('api', __name__)
 
@@ -174,6 +175,8 @@ def route_action_(action, user, payload):
     the entire API surface at a glance and audit permissions.
     """
     # ---- Students / Workflow ----
+    if action == 'records.searchByMid':
+        return search_records_by_mid_(user, payload.get('mid'))
     if action == 'students.list':
         return list_students_(user, config.SHEET_RESPONSE, payload)
     if action == 'students.listCompleted':

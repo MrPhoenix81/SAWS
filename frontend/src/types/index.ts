@@ -166,6 +166,11 @@ export interface BranchCount {
   total: number;
 }
 
+export interface BranchEntryCount {
+  branch: string;
+  count: number;
+}
+
 export interface StatusCount {
   status: string;
   count: number;
@@ -177,9 +182,9 @@ export interface DashboardData {
   scope?: { branch: string; global: boolean };
   cards: DashboardCards;
   charts: {
-    dailyTrend: TrendPoint[];
     monthlyTrend: TrendPoint[];
-    approvalTrend: TrendPoint[];
+    dailyBranchCount: BranchEntryCount[];
+    monthlyBranchCount: BranchEntryCount[];
     branchComparison: BranchCount[];
     /** One sorted (highest -> lowest) status breakdown per workflow. Each
      *  workflow's "Approved" bucket is the completed-sheet count; other

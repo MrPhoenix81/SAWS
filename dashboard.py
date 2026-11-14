@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 import config
 from auth import ApiError
+from branches import list_branches_
 from db_utils import read_sheet_as_objects_, get_cached_
 
 
@@ -170,17 +171,57 @@ def get_dashboard_data_(user, params=None):
                         branch_counts[b]['approved'] += 1
             branch_comparison = [{'branch': b, **v} for b, v in sorted(branch_counts.items())]
 
-        daily_trend = build_date_trend_(all_rows, 'Entry Date', 14, 'day')
         monthly_trend = build_date_trend_(all_rows, 'Entry Date', 12, 'month')
-        approval_trend = build_date_trend_(completed_all, 'Approval Date', 14, 'day')
+        monthly_branch_counts = defaultdict(int)
+        daily_branch_counts = defaultdict(int)
+        for name in selected_workflows:
+            active, completed, _ = sources[name]
+            for row in active + completed:
+                branch = str(row.get('Branch') or 'Unknown').strip() or 'Unknown'
+                if not is_global and branch != requested_branch:
+                    continue
+                if is_global and requested_branch and branch != requested_branch:
+                    continue
+                entry_date = _parse_dt(row.get('Entry Date'))
+                if not entry_date:
+                    continue
+                if (entry_date.year, entry_date.month, entry_date.day) == (today.year, today.month, today.day):
+                    daily_branch_counts[branch] += 1
+                if (entry_date.year, entry_date.month) == (today.year, today.month):
+                    monthly_branch_counts[branch] += 1
+
+        daily_branch_count = [
+            {'branch': branch, 'count': count}
+            for branch, count in sorted(
+                daily_branch_counts.items(),
+                key=lambda item: (-item[1], item[0]),
+            )
+        ]
+        monthly_branch_names = set(monthly_branch_counts)
+        if is_global and not requested_branch:
+            monthly_branch_names.update(
+                str(branch.get('name') or '').strip()
+                for branch in list_branches_(False)
+                if str(branch.get('name') or '').strip()
+            )
+        elif requested_branch:
+            monthly_branch_names.add(requested_branch)
+        monthly_branch_count = [
+            {'branch': branch, 'count': monthly_branch_counts.get(branch, 0)}
+            for branch in sorted(
+                monthly_branch_names,
+                key=lambda branch: (-monthly_branch_counts.get(branch, 0), branch),
+            )
+            if monthly_branch_counts.get(branch, 0) > 0
+        ]
 
         return {
             'scope': {'branch': requested_branch or 'All branches', 'global': is_global},
             'cards': cards,
             'charts': {
-                'dailyTrend': daily_trend,
                 'monthlyTrend': monthly_trend,
-                'approvalTrend': approval_trend,
+                'dailyBranchCount': daily_branch_count,
+                'monthlyBranchCount': monthly_branch_count,
                 'branchComparison': branch_comparison,
                 'statusDistribution': status_distribution,
                 'workflowComparison': workflow_comparison,

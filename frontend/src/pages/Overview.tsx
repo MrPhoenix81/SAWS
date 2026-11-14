@@ -869,32 +869,40 @@ export default function Overview() {
               );
             })}
 
-            <div className="bg-white rounded-lg border border-ink-100 shadow-panel p-5 flex flex-col">
-              <h3 className="text-sm font-medium mb-3 shrink-0">Daily entries (last 14 days)</h3>
+            <div className="bg-white rounded-lg border border-ink-100 shadow-panel p-5 flex flex-col lg:col-span-2">
+              <h3 className="text-sm font-medium mb-3 shrink-0">Today&rsquo;s entries by branch</h3>
               <div className="flex-1 min-h-[220px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={data.charts.dailyTrend}>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={data.charts.dailyBranchCount} margin={{ bottom: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                    <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={1} tickFormatter={(v: string) => v.slice(5)} />
+                    <XAxis dataKey="branch" tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={60} />
                     <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="count" stroke="#1596C9" strokeWidth={2} dot={false} />
-                  </LineChart>
+                    <Tooltip formatter={(value: number) => [value, 'Entries']} />
+                    <Bar dataKey="count" name="Entries" radius={[4, 4, 0, 0]}>
+                      {data.charts.dailyBranchCount.map((entry, index) => (
+                        <Cell key={entry.branch} fill={shadeForRank(index)} />
+                      ))}
+                    </Bar>
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
-            <div className="bg-white rounded-lg border border-ink-100 shadow-panel p-5 flex flex-col">
-              <h3 className="text-sm font-medium mb-3 shrink-0">Approval trend (last 14 days)</h3>
+            <div className="bg-white rounded-lg border border-ink-100 shadow-panel p-5 flex flex-col lg:col-span-2">
+              <h3 className="text-sm font-medium mb-3 shrink-0">Entries this month by branch</h3>
               <div className="flex-1 min-h-[220px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={data.charts.approvalTrend}>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={data.charts.monthlyBranchCount} margin={{ bottom: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                    <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={1} tickFormatter={(v: string) => v.slice(5)} />
+                    <XAxis dataKey="branch" tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={60} />
                     <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="count" stroke="#3F7D58" strokeWidth={2} dot={false} />
-                  </LineChart>
+                    <Tooltip formatter={(value: number) => [value, 'Entries']} />
+                    <Bar dataKey="count" name="Entries" radius={[4, 4, 0, 0]}>
+                      {data.charts.monthlyBranchCount.map((entry, index) => (
+                        <Cell key={entry.branch} fill={shadeForRank(index)} />
+                      ))}
+                    </Bar>
+                  </BarChart>
                 </ResponsiveContainer>
               </div>
             </div>

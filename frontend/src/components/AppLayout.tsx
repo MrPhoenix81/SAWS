@@ -342,7 +342,7 @@ export default function AppLayout() {
     themeTransitionRef.current = window.setTimeout(() => {
       root.classList.remove('theme-transition');
       themeTransitionRef.current = null;
-    }, 1000);
+    }, 1500);
   }
 
   React.useEffect(() => {

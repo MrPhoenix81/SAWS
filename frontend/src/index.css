@@ -73,6 +73,15 @@
   -webkit-backdrop-filter: blur(18px) saturate(135%);
 }
 
+.dark .overview-filter-menu {
+  background: #111a36;
+  background-image: none;
+  border-color: rgba(177, 198, 239, 0.32);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
 .dark [class~="bg-white/70"] {
   background-color: rgba(28, 39, 72, 0.78);
 }
@@ -140,6 +149,15 @@
 .dark .border-ink-200,
 .dark .border-ink-300 {
   border-color: rgba(177, 198, 239, 0.16);
+}
+
+.dark .account-menu-panel {
+  background: #111a36;
+  background-image: none;
+  border-color: rgba(177, 198, 239, 0.32);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .dark .shadow-panel {

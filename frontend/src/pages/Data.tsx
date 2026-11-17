@@ -11,7 +11,9 @@ import {
   AlertTriangle,
   X,
   CloudUpload,
-  Loader2
+  Loader2,
+  Search,
+  ExternalLink
 } from 'lucide-react';
 import {
   listAllBranches,
@@ -20,12 +22,24 @@ import {
   bulkImport,
   bulkDelete,
   runBackupNow,
+  getSystemLinks,
+  searchRecordsByMid,
+  updateRecordStatus,
   ApiError,
   type BulkWorkflow,
   type BulkSheet,
-  type BulkImportResult
+  type BulkImportResult,
+  type GlobalMidSearchResult
 } from '@/lib/apiClient';
 import { useBulkTasks } from '@/context/BulkTaskContext';
+import { useAuth } from '@/context/AuthContext';
+import { INACTIVE_STATUS_LABELS, STATUS_LABELS, TRANSFER_STATUS_LABELS } from '@/types';
+
+const WORKFLOW_STATUS_LABELS: Record<string, string> = {
+  ...STATUS_LABELS,
+  ...INACTIVE_STATUS_LABELS,
+  ...TRANSFER_STATUS_LABELS
+};
 
 const WORKFLOWS: { value: BulkWorkflow; label: string }[] = [
   { value: 'discontinue', label: 'Discontinue' },
@@ -270,11 +284,32 @@ function BranchPicker({
 }
 
 export default function Data() {
-  const branchesQuery = useQuery({ queryKey: ['branches', 'all'], queryFn: listAllBranches });
+  const { user } = useAuth();
+  const branchesQuery = useQuery({
+    queryKey: ['branches', 'all'],
+    queryFn: listAllBranches,
+    enabled: user?.role === 'Admin'
+  });
   const branchNames = useMemo(
     () => (branchesQuery.data || []).map((b) => b.name).sort((a, b) => a.localeCompare(b)),
     [branchesQuery.data]
   );
+
+  if (user?.role === 'Head Office') {
+    return (
+      <div className="flex-1 min-h-0 flex flex-col gap-6 overflow-y-auto">
+        <div className="shrink-0">
+          <h2 className="font-display text-2xl">Data</h2>
+          <p className="text-sm text-ink-700/60 mt-1">
+            Open the backup sheet or update a pending workflow status by MID.
+            Final approval remains Admin-only.
+          </p>
+        </div>
+        <StatusEditor />
+        <BackupSheetButton />
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 min-h-0 flex flex-col gap-6">
@@ -284,6 +319,10 @@ export default function Data() {
           Upload, download, or delete many records at once, across any workflow and branch -
           plus the Google Sheet backup. Admin only.
         </p>
+      </div>
+
+      <div className="shrink-0">
+        <StatusEditor />
       </div>
 
       <div className="shrink-0">
@@ -299,9 +338,184 @@ export default function Data() {
   );
 }
 
+function BackupSheetButton() {
+  const linksQuery = useQuery({ queryKey: ['head-office-backup-sheet-link'], queryFn: getSystemLinks });
+  const backupSheet = linksQuery.data?.links.find((link) => link.key === 'backupSheet');
+
+  return (
+    <>
+      {linksQuery.isLoading && <p className="text-sm text-ink-700/60">Loading backup sheet link…</p>}
+      {linksQuery.isError && <p role="alert" className="text-sm text-reject">Could not load the backup sheet link.</p>}
+      {linksQuery.data && !backupSheet && (
+        <p className="text-sm text-ink-700/60">No backup sheet has been configured.</p>
+      )}
+      {backupSheet && (
+        <div className="flex flex-col items-start gap-1">
+          <a
+            href={backupSheet.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex w-fit items-center gap-2 rounded-md bg-ink-900 px-4 py-2 text-sm font-medium text-white hover:bg-ink-700"
+          >
+            <FileSpreadsheet size={16} className="text-green-400" />
+            Backup Google Sheet
+            <ExternalLink size={14} className="text-paper/70" />
+          </a>
+          <p className="text-xs text-ink-700/60">
+            Opens the system backup spreadsheet in Google Sheets.
+          </p>
+        </div>
+      )}
+    </>
+  );
+}
+
+type StatusSearchRecord = GlobalMidSearchResult['results'][number];
+
+function StatusEditor() {
+  const [mid, setMid] = useState('');
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const search = useMutation({ mutationFn: searchRecordsByMid });
+  const updateStatus = useMutation({
+    mutationFn: (input: { mid: string; workflow: StatusSearchRecord['workflow']; status: string }) =>
+      updateRecordStatus(input.mid, input.workflow, input.status),
+    onSuccess: (_result, input) => {
+      setSuccessMessage(`Status updated for MID ${input.mid}.`);
+      search.mutate(input.mid);
+    }
+  });
+
+  function submitSearch(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const query = mid.trim();
+    if (!query) return;
+    setSuccessMessage(null);
+    search.mutate(query);
+  }
+
+  return (
+    <Section
+      icon={Search}
+      title="Update pending status by MID"
+      description="Search across workflows and select a pending stage. Final approval must use the existing approval workflow."
+    >
+      <form onSubmit={submitSearch} className="flex flex-wrap gap-2">
+        <input
+          value={mid}
+          onChange={(event) => setMid(event.target.value)}
+          placeholder="Enter MID"
+          maxLength={100}
+          className="min-w-[220px] flex-1 rounded-md border border-ink-200 bg-white px-3 py-2 text-sm"
+        />
+        <button
+          type="submit"
+          disabled={!mid.trim() || search.isPending}
+          className="inline-flex items-center gap-2 rounded-md bg-ink-900 px-4 py-2 text-sm text-white hover:bg-ink-700 disabled:opacity-50"
+        >
+          {search.isPending ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
+          Search MID
+        </button>
+      </form>
+
+      {search.isError && (
+        <p role="alert" className="text-sm text-reject">
+          {search.error instanceof ApiError
+            ? `Search failed (${search.error.code}).`
+            : 'Could not search records. Please try again.'}
+        </p>
+      )}
+      {updateStatus.isError && (
+        <p role="alert" className="text-sm text-reject">
+          {updateStatus.error instanceof ApiError
+            ? `Could not update status (${updateStatus.error.code}).`
+            : 'Could not update status. Please try again.'}
+        </p>
+      )}
+      {successMessage && <p role="status" className="text-sm text-approve">{successMessage}</p>}
+      {search.data && search.data.results.length === 0 && (
+        <p className="text-sm text-ink-700/60">No records found for MID {search.data.MID}.</p>
+      )}
+      {search.data && search.data.results.length > 0 && (
+        <div className="space-y-3">
+          {search.data.results.map((result, index) => (
+            <StatusSearchResult
+              key={`${result.workflow}-${result.tab}-${index}`}
+              result={result}
+              mid={search.data!.MID}
+              isSaving={updateStatus.isPending}
+              onSave={(status) => {
+                setSuccessMessage(null);
+                updateStatus.mutate({ mid: search.data!.MID, workflow: result.workflow, status });
+              }}
+            />
+          ))}
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function StatusSearchResult({
+  result,
+  mid,
+  isSaving,
+  onSave
+}: {
+  result: StatusSearchRecord;
+  mid: string;
+  isSaving: boolean;
+  onSave: (status: string) => void;
+}) {
+  const currentStatus = String(result.record.Status || '');
+  const [selectedStatus, setSelectedStatus] = useState(currentStatus);
+  React.useEffect(() => setSelectedStatus(currentStatus), [currentStatus]);
+
+  return (
+    <div className="rounded-md border border-ink-100 bg-paper/50 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">{String(result.record['Student Name'] || 'Unnamed student')}</p>
+          <p className="mt-1 text-xs text-ink-700/60">
+            {result.workflow} · {result.tab === 'completed' ? 'Completed' : 'Active'} · {String(result.record.Branch || '—')} · MID {mid}
+          </p>
+        </div>
+        <span className="text-xs font-medium text-ink-700/70">
+          Current: {WORKFLOW_STATUS_LABELS[currentStatus] || currentStatus || 'Unknown'}
+        </span>
+      </div>
+
+      {result.tab === 'completed' ? (
+        <p className="mt-3 text-xs text-ink-700/60">Final-approved records cannot be changed here.</p>
+      ) : (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <label className="sr-only" htmlFor={`status-${result.workflow}-${mid}`}>Pending status</label>
+          <select
+            id={`status-${result.workflow}-${mid}`}
+            value={selectedStatus}
+            onChange={(event) => setSelectedStatus(event.target.value)}
+            className="min-w-[220px] rounded-md border border-ink-200 bg-white px-3 py-2 text-sm"
+          >
+            {result.statusOptions.map((status) => (
+              <option key={status} value={status}>{WORKFLOW_STATUS_LABELS[status] || status}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => onSave(selectedStatus)}
+            disabled={isSaving || selectedStatus === currentStatus}
+            className="rounded-md bg-ink-900 px-4 py-2 text-sm text-white hover:bg-ink-700 disabled:opacity-50"
+          >
+            {isSaving ? 'Saving…' : 'Save status'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ============================== BACKUP ============================== */
 
-/** Item 5: lets Admin manually trigger the daily Google Sheet backup right now, instead of waiting for the 1:00 AM schedule. */
+/** Lets Admin or Head Office manually trigger the daily Google Sheet backup. */
 function BackupSection() {
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 

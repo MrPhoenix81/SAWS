@@ -275,19 +275,16 @@ export async function listBranches() {
 }
 
 /**
- * Admin-only. Quick-access external links for the Admin dashboard's
- * "System / Important Links" section (item 9) - Data Storage,
- * Image Storage, Backup Google Sheet, Hosting Platform, Uptime
- * Monitor. Only ever contains plain URLs, never credentials - each
- * linked service handles its own login.
+ * Admin receives all configured system links; Head Office receives
+ * only the Backup Google Sheet link. Only plain URLs are returned.
  */
 export async function getSystemLinks() {
   return callApi<{ links: { key: string; label: string; url: string }[] }>('admin.systemLinks');
 }
 
 /**
- * Admin-only. Manually triggers the daily Google Sheet backup right
- * now instead of waiting for the 1:00 AM schedule - useful for
+ * Admin or Head Office manually triggers the daily Google Sheet backup
+ * instead of waiting for the 1:00 AM schedule - useful for
  * testing, or right before doing something risky. Runs the exact same
  * code the automatic schedule uses.
  */
@@ -296,20 +293,19 @@ export async function runBackupNow() {
 }
 
 /**
- * ---- Admin: Branch Management ----
+ * ---- Admin and Head Office: Branch Management ----
  * All of the below map onto the branches.* actions in Code.gs /
- * Branches.gs, and are only ever authorized for Admin on the backend
- * (requireRole_(user, [ROLE_ADMIN])).
+ * Branches.gs, and are authorized for Admin and Head Office.
  */
 
-/** Admin-only. Includes soft-deleted branches, for the management screen. */
+/** Includes soft-deleted branches, for the management screen. */
 export async function listAllBranches() {
   return callApi<Branch[]>('branches.listAll');
 }
 
 /**
- * Creates a new branch, or reactivates it if a branch with that name
- * was previously soft-deleted (reactivated: true in the response).
+ * Admin or Head Office creates a branch, or reactivates a soft-deleted
+ * branch with the same name (reactivated: true in the response).
  */
 export async function createBranch(name: string) {
   return callApi<{ success: true; name: string; reactivated?: boolean }>('branches.create', { name });
@@ -344,11 +340,20 @@ export interface GlobalMidSearchResult {
     workflow: 'Discontinue' | 'Inactive' | 'Transfer';
     tab: 'active' | 'completed';
     record: Record<string, unknown>;
+    statusOptions: string[];
   }>;
 }
 
 export async function searchRecordsByMid(mid: string) {
   return callApi<GlobalMidSearchResult>('records.searchByMid', { mid });
+}
+
+export async function updateRecordStatus(
+  mid: string,
+  workflow: GlobalMidSearchResult['results'][number]['workflow'],
+  status: string
+) {
+  return callApi<{ success: true; status: string }>('records.updateStatus', { mid, workflow, status });
 }
 
 /** SCM (or Admin, on a branch's behalf) creates a new discontinuation entry. */

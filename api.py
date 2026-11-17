@@ -27,7 +27,7 @@ from auth import (
 from audit_log import log_audit_, get_audit_logs_
 from branches import list_branches_, create_branch_, delete_branch_, reactivate_branch_
 from users import create_user_, update_user_, delete_user_, reset_user_password_
-from dashboard import get_dashboard_data_, get_dashboard_rows_
+from dashboard import get_dashboard_data_, get_dashboard_rows_, get_dashboard_export_data_
 from inactive import (
     submit_inactive_, list_inactive_, head_office_approve_inactive_, head_office_reject_inactive_,
     admin_approve_inactive_, admin_reject_inactive_, admin_update_inactive_, head_office_update_inactive_, delete_inactive_,
@@ -46,7 +46,7 @@ from students import (
     delete_student_entry_, get_reason_screenshot_url_,
 )
 from bulk import bulk_template_, bulk_export_, bulk_import_, bulk_delete_
-from record_search import search_records_by_mid_
+from record_search import search_records_by_mid_, update_record_status_
 
 api_bp = Blueprint('api', __name__)
 
@@ -173,6 +173,11 @@ def route_action_(action, user, payload):
     # ---- Students / Workflow ----
     if action == 'records.searchByMid':
         return search_records_by_mid_(user, payload.get('mid'))
+    if action == 'records.updateStatus':
+        return update_record_status_(
+            user, payload.get('mid'), payload.get('workflow'),
+            payload.get('status'), payload.get('browser')
+        )
     if action == 'students.list':
         return list_students_(user, config.SHEET_RESPONSE, payload)
     if action == 'students.listCompleted':
@@ -313,12 +318,14 @@ def route_action_(action, user, payload):
         return get_dashboard_data_(user, payload)
     if action == 'dashboard.rows':
         return get_dashboard_rows_(user, payload)
+    if action == 'dashboard.exportData':
+        return get_dashboard_export_data_(user, payload)
 
     # ---- Admin: System / Important Links (item 9) ----
     # Plain external URLs only - no credentials are ever stored or
     # returned here. Each linked service handles its own login.
     if action == 'admin.systemLinks':
-        require_role_(user, [config.ROLE_ADMIN])
+        require_role_(user, [config.ROLE_ADMIN, config.ROLE_HEAD_OFFICE])
         links = [
             {'key': 'database', 'label': 'Data Storage / Database', 'url': config.SYSTEM_LINK_DATABASE},
             {'key': 'imageStorage', 'label': 'Image Storage / Image Database', 'url': config.SYSTEM_LINK_IMAGE_STORAGE},
@@ -326,6 +333,8 @@ def route_action_(action, user, payload):
             {'key': 'hosting', 'label': 'Hosting Platform', 'url': config.SYSTEM_LINK_HOSTING},
             {'key': 'uptimeMonitor', 'label': 'Uptime Monitoring Service', 'url': config.SYSTEM_LINK_UPTIME_MONITOR},
         ]
+        if user['role'] == config.ROLE_HEAD_OFFICE:
+            links = [link for link in links if link['key'] == 'backupSheet']
         return {'links': [l for l in links if l['url']]}
 
     # ---- Self-service ----
@@ -356,16 +365,16 @@ def route_action_(action, user, payload):
     if action == 'branches.list':
         return [b['name'] for b in list_branches_(False)]
     if action == 'branches.listAll':
-        require_role_(user, [config.ROLE_ADMIN])
+        require_role_(user, [config.ROLE_ADMIN, config.ROLE_HEAD_OFFICE])
         return list_branches_(True)
     if action == 'branches.create':
-        require_role_(user, [config.ROLE_ADMIN])
+        require_role_(user, [config.ROLE_ADMIN, config.ROLE_HEAD_OFFICE])
         return create_branch_(user, payload)
     if action == 'branches.delete':
-        require_role_(user, [config.ROLE_ADMIN])
+        require_role_(user, [config.ROLE_ADMIN, config.ROLE_HEAD_OFFICE])
         return delete_branch_(user, payload)
     if action == 'branches.reactivate':
-        require_role_(user, [config.ROLE_ADMIN])
+        require_role_(user, [config.ROLE_ADMIN, config.ROLE_HEAD_OFFICE])
         return reactivate_branch_(user, payload)
 
     # ---- Audit Logs (Admin + Head Office see all branches, others see own) ----

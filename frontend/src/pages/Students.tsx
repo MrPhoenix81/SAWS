@@ -1307,7 +1307,7 @@ function StudentDetailsModal({
                 <p>Inactive to: {formatWorkflowDate(row['Inactive To'])}</p>
                 <p>Discontinue converted: {formatWorkflowDate(row['Discontinue Converted Date'])}</p>
               </>}
-              {showsBillingColumns(user?.role) && <>
+              {(showsBillingColumns(user?.role) || user?.role === 'Manager') && <>
                 <p>Total billed: ₹{Number(row['Total Billed'] || 0).toLocaleString('en-IN')}</p>
                 <p>Total paid: ₹{Number(row['Total Paid'] || 0).toLocaleString('en-IN')}</p>
                 <p className="text-reject">Arrear: ₹{Number(row.Arrear || 0).toLocaleString('en-IN')}</p>
@@ -1470,7 +1470,7 @@ function StudentExpandedDetails({
                 <p>Inactive to: {formatWorkflowDate(row['Inactive To'])}</p>
                 <p>Discontinue converted: {formatWorkflowDate(row['Discontinue Converted Date'])}</p>
               </>}
-              {showsBillingColumns(user?.role) && <>
+              {(showsBillingColumns(user?.role) || user?.role === 'Manager') && <>
                 <p>Total billed: ₹{Number(row['Total Billed'] || 0).toLocaleString('en-IN')}</p>
                 <p>Total paid: ₹{Number(row['Total Paid'] || 0).toLocaleString('en-IN')}</p>
                 <p className="text-reject">Arrear: ₹{Number(row.Arrear || 0).toLocaleString('en-IN')}</p>

@@ -3,7 +3,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 import config
-from auth import ApiError
+from auth import ApiError, require_role_
 from branches import list_branches_
 from db_utils import read_sheet_as_objects_, get_cached_
 
@@ -29,6 +29,14 @@ def _in_date_range(row, date_from=None, date_to=None):
     if date_to and d.date() > datetime.fromisoformat(str(date_to)[:10]).date():
         return False
     return True
+
+
+def _short_status_label(workflow_name, status):
+    label = config.STATUS_LABELS.get(status, status)
+    prefix = f'{workflow_name} - '
+    if isinstance(label, str) and label.startswith(prefix):
+        return label[len(prefix):]
+    return label
 
 
 def get_dashboard_data_(user, params=None):
@@ -128,26 +136,13 @@ def get_dashboard_data_(user, params=None):
         # and its active rows are grouped by status label with no workflow
         # prefix (the surrounding chart already says which workflow it is).
         # Sorted highest -> lowest so the frontend can shade bars by rank.
-        def short_status_label(workflow_name, status):
-            """STATUS_LABELS for Inactive/Transfer statuses already bake
-            in the workflow name (e.g. 'Inactive - Pending Head Office')
-            since that same label is also used in places like the audit
-            log where the workflow isn't otherwise obvious. Here, the
-            chart itself is already titled with the workflow name, so
-            strip that redundant prefix for display."""
-            label = config.STATUS_LABELS.get(status, status)
-            prefix = f'{workflow_name} - '
-            if isinstance(label, str) and label.startswith(prefix):
-                return label[len(prefix):]
-            return label
-
         status_distribution = {}
         for name in available_workflows:
             active, completed, _ = workflow_rows.get(name, ([], [], None))
             counts = defaultdict(int)
             counts['Approved'] = len(completed)
             for r in active:
-                counts[short_status_label(name, r.get('Status'))] += 1
+                counts[_short_status_label(name, r.get('Status'))] += 1
             status_distribution[name] = sorted(
                 ({'status': k, 'count': v} for k, v in counts.items() if v > 0),
                 key=lambda item: item['count'],
@@ -264,12 +259,12 @@ def get_dashboard_data_(user, params=None):
 
 
 def get_dashboard_rows_(user, params=None):
-    """Return all rows represented by a dashboard KPI."""
+    """Return rows represented by a dashboard KPI or status distribution."""
     params = params or {}
     metric = str(params.get('metric') or '')
     supported_metrics = {
         'pending', 'awaitingHeadOffice', 'awaitingAdminApproval', 'approved',
-        'rejected', 'todaysEntries', 'monthlyEntries',
+        'rejected', 'todaysEntries', 'monthlyEntries', 'statusDistribution',
     }
     if metric not in supported_metrics:
         raise ApiError('BAD_REQUEST')
@@ -279,6 +274,9 @@ def get_dashboard_rows_(user, params=None):
     requested_workflow = str(params.get('workflow') or '').strip()
     available_workflows = ('Discontinue', 'Inactive', 'Transfer')
     if requested_workflow and requested_workflow not in available_workflows:
+        raise ApiError('BAD_REQUEST')
+    requested_status = str(params.get('status') or '').strip()
+    if metric == 'statusDistribution' and (not requested_workflow or not requested_status):
         raise ApiError('BAD_REQUEST')
 
     pending_statuses = {
@@ -320,6 +318,10 @@ def get_dashboard_rows_(user, params=None):
         scoped_rows = []
         if metric == 'approved':
             scoped_rows = [(row, 'completed') for row in completed]
+        elif metric == 'statusDistribution':
+            source_rows = completed if requested_status == 'Approved' else active
+            sheet = 'completed' if requested_status == 'Approved' else 'active'
+            scoped_rows = [(row, sheet) for row in source_rows]
         elif metric in ('todaysEntries', 'monthlyEntries'):
             scoped_rows = [(row, 'active') for row in active] + [(row, 'completed') for row in completed]
         else:
@@ -334,6 +336,10 @@ def get_dashboard_rows_(user, params=None):
                 continue
 
             status = row.get('Status')
+            if metric == 'statusDistribution':
+                chart_status = 'Approved' if sheet == 'completed' else _short_status_label(workflow, status)
+                if chart_status != requested_status:
+                    continue
             if metric == 'pending' and status not in pending_statuses:
                 continue
             if metric == 'awaitingHeadOffice' and status not in head_office_statuses:
@@ -362,6 +368,87 @@ def get_dashboard_rows_(user, params=None):
             })
 
     return {'total': len(rows), 'rows': rows}
+
+
+def get_dashboard_export_data_(user, params=None):
+    """Return filtered workflow records for role-appropriate dashboard exports."""
+    params = params or {}
+    allowed_roles = (config.ROLE_SCM, config.ROLE_HEAD_OFFICE, config.ROLE_ADMIN)
+    require_role_(user, allowed_roles)
+
+    is_global = user['role'] in config.GLOBAL_VISIBILITY_ROLES
+    requested_branch = str(params.get('branch') or '').strip() if is_global else str(user.get('branch') or '').strip()
+    requested_workflow = str(params.get('workflow') or '').strip()
+    available_workflows = ('Discontinue', 'Inactive', 'Transfer')
+    if requested_workflow and requested_workflow not in available_workflows:
+        raise ApiError('BAD_REQUEST')
+
+    columns = [
+        'Workflow', 'Record Set', 'Status', 'Sl No', 'Branch', 'MID', 'Student Name',
+        'Batch Name', 'Faculty Name', 'Phone Number 1', 'Phone Number 2', 'Phone Number 3',
+        'Total Billed', 'Total Paid', 'Arrear', 'Last Present Day', 'Days Since Present',
+        'Entry Date', 'SCM Updated Date', 'HOF Updated Date', 'Manager Updated Date',
+        'Head Office Decision', 'Head Office Name', 'Head Office Date',
+        'Admin Approval', 'Admin Name', 'Approval Date',
+        'Inactive From', 'Inactive To', 'Discontinue Converted Date', 'Transfer To Branch',
+        'Last Rejected By', 'Last Rejected Stage', 'Last Rejected Date', 'Rejected Roles',
+    ]
+    if user['role'] in (config.ROLE_ADMIN, config.ROLE_HEAD_OFFICE):
+        columns.extend([
+            'Reason (SCM)', 'Reason (HOF)', 'Reason (Manager)', 'Reason', 'Last Rejection Reason',
+        ])
+
+    sources = {
+        'Discontinue': (config.SHEET_RESPONSE, config.SHEET_COMPLETED),
+        'Inactive': (config.SHEET_INACTIVE_RESPONSE, config.SHEET_INACTIVE_COMPLETED),
+        'Transfer': (config.SHEET_TRANSFER_RESPONSE, config.SHEET_TRANSFER_COMPLETED),
+    }
+    conversion_dates = {}
+    for inactive_row in read_sheet_as_objects_(config.SHEET_INACTIVE_COMPLETED):
+        converted_mid = str(inactive_row.get('Converted To Discontinue MID') or '').strip()
+        if converted_mid and inactive_row.get('Converted Date'):
+            conversion_dates[converted_mid] = {
+                'Inactive From': inactive_row.get('Last Present Day') or '',
+                'Inactive To': inactive_row.get('Approval Date') or '',
+                'Discontinue Converted Date': inactive_row.get('Converted Date') or '',
+            }
+
+    workflows = (requested_workflow,) if requested_workflow else available_workflows
+    rows = []
+    for workflow in workflows:
+        active_sheet, completed_sheet = sources[workflow]
+        active_rows = read_sheet_as_objects_(active_sheet)
+        completed_rows = read_sheet_as_objects_(completed_sheet)
+        if workflow == 'Inactive':
+            active_rows = [row for row in active_rows if row.get('Status') != config.STATUS_INACTIVE_CONVERTED]
+            completed_rows = [row for row in completed_rows if row.get('Status') != config.STATUS_INACTIVE_CONVERTED]
+
+        for record_set, source_rows in (('Active', active_rows), ('Approved', completed_rows)):
+            for record in source_rows:
+                if not is_global and record.get('Branch') != requested_branch:
+                    continue
+                if is_global and requested_branch and record.get('Branch') != requested_branch:
+                    continue
+                if not _in_date_range(record, params.get('dateFrom'), params.get('dateTo')):
+                    continue
+
+                row = {
+                    field: record.get(field, '')
+                    for field in columns
+                    if field not in ('Workflow', 'Record Set', 'Status')
+                }
+                row['Workflow'] = workflow
+                row['Record Set'] = record_set
+                status = record.get('Status')
+                row['Status'] = config.STATUS_LABELS.get(status, status or '')
+                if workflow == 'Discontinue':
+                    conversion = conversion_dates.get(str(record.get('MID') or '').strip(), {})
+                    for field, value in conversion.items():
+                        if not row.get(field):
+                            row[field] = value
+                rows.append(row)
+
+    return {'columns': columns, 'rows': rows}
 
 
 def build_date_trend_(rows, date_field, num_buckets, granularity):

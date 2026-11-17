@@ -271,9 +271,10 @@ export default function AppLayout() {
   const themeTransitionGenerationRef = useRef(0);
 
   const canManageUsers = user?.role === 'Admin' || user?.role === 'Head Office';
-  const canManageBranches = user?.role === 'Admin';
-  const canManageData = user?.role === 'Admin';
-  const hasAdminSection = canManageUsers || canManageBranches || canManageData;
+  const canManageBranches = user?.role === 'Admin' || user?.role === 'Head Office';
+  const canAccessData = user?.role === 'Admin' || user?.role === 'Head Office';
+  const canManageSystemLinks = user?.role === 'Admin';
+  const hasAdminSection = canManageUsers || canManageBranches || canAccessData;
 
   // Sidebar badges count the row-level flags in these already-fetched pages.
   const pendingRowsParams = { page: 1, pageSize: DEFAULT_PAGE_SIZE };
@@ -404,10 +405,10 @@ export default function AppLayout() {
               {canManageBranches && (
                 <SidebarLink to="/admin/branches" icon={Building2} label="Manage branches" />
               )}
-              {canManageData && (
+              {canAccessData && (
                 <SidebarLink to="/admin/data" icon={Database} label="Data" />
               )}
-              {canManageData && (
+              {canManageSystemLinks && (
                 <SidebarLink to="/admin/links" icon={Link2} label="Important Links" />
               )}
             </div>
@@ -419,7 +420,7 @@ export default function AppLayout() {
           pinned to the viewport height too, so only <main>'s own
           overflow-y-auto scrolls - the header above it stays put. */}
       <div className="flex-1 flex flex-col min-w-0 h-full">
-        <header className="h-12 shrink-0 border-b border-ink-100 bg-white flex items-center justify-between px-5">
+        <header className="relative z-50 h-12 shrink-0 border-b border-ink-100 bg-white flex items-center justify-between px-5">
           <h1 className="font-display text-base leading-tight">{pageTitle}</h1>
 
           <div className="flex min-w-0 items-center gap-3">
@@ -435,7 +436,7 @@ export default function AppLayout() {
                 ? <Sun size={17} className="text-amber transition-transform duration-300" />
                 : <Moon size={17} className="transition-transform duration-300" />}
             </button>
-            <div className="relative" ref={menuRef}>
+            <div className="relative z-50" ref={menuRef}>
               <button
                 onClick={() => setMenuOpen((v) => !v)}
                 className="flex items-center gap-2 rounded-md border border-ink-100 pl-3 pr-2 py-1.5 hover:bg-paper transition-colors"
@@ -450,7 +451,7 @@ export default function AppLayout() {
               </button>
 
               {menuOpen && (
-                <div className="absolute right-0 mt-2 w-52 rounded-md border border-ink-100 bg-white shadow-panel py-1 z-10">
+                <div className="account-menu-panel absolute right-0 mt-2 w-52 rounded-md border border-ink-100 bg-white shadow-panel py-1 z-50">
                   <button
                     onClick={() => {
                       setMenuOpen(false);
@@ -480,8 +481,8 @@ export default function AppLayout() {
         <main
           className={
             fixedHeightPage
-              ? 'flex-1 min-h-0 flex flex-col overflow-hidden px-5 py-4'
-              : 'flex-1 overflow-y-auto px-5 py-4'
+              ? 'relative z-0 flex-1 min-h-0 flex flex-col overflow-hidden px-5 py-4'
+              : 'relative z-0 flex-1 overflow-y-auto px-5 py-4'
           }
         >
           <div

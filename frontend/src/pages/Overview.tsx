@@ -15,10 +15,10 @@ import {
   Cell
 } from 'recharts';
 import {
-  Download,
   Search,
   SlidersHorizontal,
   X,
+  Download,
   ChevronDown,
   FileText,
   FileSpreadsheet,
@@ -49,7 +49,7 @@ import {
 import { readOverviewFilters, writeOverviewFilters } from '@/lib/sessionState';
 import { useAuth } from '@/context/AuthContext';
 import GlobalMidSearch from '@/components/GlobalMidSearch';
-import type { DashboardData } from '@/types';
+import type { DashboardData, DashboardWorkflow } from '@/types';
 
 type OverviewMetric = 'pending' | 'awaitingAdminApproval' | 'approved' | 'rejected' | 'todaysEntries' | 'monthlyEntries';
 
@@ -82,6 +82,15 @@ interface DashboardRowsResult {
   total: number;
   rows: DashboardRow[];
 }
+
+interface DashboardExportData {
+  columns: string[];
+  rows: Record<string, string | number | null>[];
+}
+
+type DashboardSelection =
+  | { kind: 'metric'; metric: OverviewMetric }
+  | { kind: 'status'; workflow: DashboardWorkflow; status: string };
 
 // Shared blue scale for any chart shaded by rank: darkest = highest value,
 // lightest = lowest. Capped at a mid-light blue (not the palest tint) so the
@@ -207,6 +216,49 @@ function downloadOverviewPdf(
   doc.save(`overview-${safeBranch}-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
+function downloadDashboardDataFile(format: 'csv' | 'xlsx' | 'pdf', data: DashboardExportData) {
+  const fileBase = `sdms_data_${new Date().toISOString().slice(0, 10)}`;
+  const values = data.rows.map((row) => data.columns.map((column) => row[column] ?? ''));
+  if (format === 'csv') {
+    const escape = (value: string | number) => {
+      const text = String(value);
+      return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const csvRows = [data.columns, ...values].map((row) => row.map(escape).join(','));
+    const blob = new Blob([csvRows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${fileBase}.csv`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return;
+  }
+  if (format === 'xlsx') {
+    const worksheet = XLSX.utils.aoa_to_sheet([data.columns, ...values]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Data');
+    XLSX.writeFile(workbook, `${fileBase}.xlsx`);
+    return;
+  }
+
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a3' });
+  doc.setFontSize(14);
+  doc.text('Student Workflow Data', 24, 28);
+  autoTable(doc, {
+    startY: 40,
+    head: [data.columns],
+    body: values.map((row) => row.map((value) => String(value))),
+    styles: { fontSize: 5, cellPadding: 2, overflow: 'linebreak' },
+    headStyles: { fillColor: [18, 22, 63], textColor: 255 },
+    margin: { left: 18, right: 18, top: 40, bottom: 18 },
+    horizontalPageBreak: true,
+    horizontalPageBreakRepeat: ['Workflow', 'MID', 'Student Name'],
+    theme: 'striped'
+  });
+  doc.save(`${fileBase}.pdf`);
+}
+
 export default function Overview() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -216,13 +268,14 @@ export default function Overview() {
   // own branch, so there's nothing for them to filter - just a download
   // button for their own branch's overview.
   const hasFullVisibility = user?.role === 'Admin' || user?.role === 'Head Office';
+  const canDownloadData = user?.role === 'Admin' || user?.role === 'Head Office' || user?.role === 'SCM';
 
   const [savedFilters] = useState(readOverviewFilters);
   const [branchFilter, setBranchFilter] = useState(savedFilters.branch);
   const [workflowFilter, setWorkflowFilter] = useState(savedFilters.workflow);
   const [dateFrom, setDateFrom] = useState(savedFilters.dateFrom);
   const [dateTo, setDateTo] = useState(savedFilters.dateTo);
-  const [selectedMetric, setSelectedMetric] = useState<OverviewMetric | null>(null);
+  const [dashboardSelection, setDashboardSelection] = useState<DashboardSelection | null>(null);
   const [openColumnFilter, setOpenColumnFilter] = useState<'branch' | 'workflow' | 'status' | null>(null);
   const [selectedBranches, setSelectedBranches] = useState<string[]>([]);
   const [selectedWorkflows, setSelectedWorkflows] = useState<string[]>([]);
@@ -230,6 +283,8 @@ export default function Overview() {
   const columnFilterMenuRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
+  const [downloadMenuLevel, setDownloadMenuLevel] = useState<'root' | 'dashboard' | 'data'>('root');
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [inactiveMidSearch, setInactiveMidSearch] = useState('');
   const [conversionTarget, setConversionTarget] = useState<ConvertibleInactiveStudent | null>(null);
   const [conversionStep, setConversionStep] = useState<'details' | 'verify' | 'reason'>('details');
@@ -433,15 +488,20 @@ export default function Overview() {
   });
 
   const dashboardRowsQuery = useQuery({
-    queryKey: ['dashboard-rows', selectedMetric, branchFilter, workflowFilter, dateFrom, dateTo],
-    queryFn: () => callApi<DashboardRowsResult>('dashboard.rows', {
-      metric: selectedMetric,
-      ...(branchFilter ? { branch: branchFilter } : {}),
-      ...(workflowFilter ? { workflow: workflowFilter } : {}),
-      ...(dateFrom ? { dateFrom } : {}),
-      ...(dateTo ? { dateTo } : {})
-    }),
-    enabled: !!selectedMetric && hasFullVisibility
+    queryKey: ['dashboard-rows', dashboardSelection, branchFilter, workflowFilter, dateFrom, dateTo],
+    queryFn: () => {
+      const selectionParams = dashboardSelection?.kind === 'status'
+        ? { metric: 'statusDistribution', workflow: dashboardSelection.workflow, status: dashboardSelection.status }
+        : { metric: dashboardSelection?.kind === 'metric' ? dashboardSelection.metric : '' };
+      return callApi<DashboardRowsResult>('dashboard.rows', {
+        ...selectionParams,
+        ...(branchFilter ? { branch: branchFilter } : {}),
+        ...(dashboardSelection?.kind !== 'status' && workflowFilter ? { workflow: workflowFilter } : {}),
+        ...(dateFrom ? { dateFrom } : {}),
+        ...(dateTo ? { dateTo } : {})
+      });
+    },
+    enabled: !!dashboardSelection && hasFullVisibility
   });
   const dashboardRows = dashboardRowsQuery.data?.rows ?? [];
   const visibleDashboardRows = dashboardRows.filter((row) =>
@@ -489,10 +549,17 @@ export default function Overview() {
   const openWorkflowPage = (workflow: string, tab: 'active' | 'completed') => {
     navigate(`${workflowPath(workflow)}?tab=${tab}`);
   };
+  const openStatusDistribution = (workflow: DashboardWorkflow, status: string) => {
+    setOpenColumnFilter(null);
+    setSelectedBranches([]);
+    setSelectedWorkflows([]);
+    setSelectedStatuses([]);
+    setDashboardSelection({ kind: 'status', workflow, status });
+  };
   const openDashboardRow = (row: DashboardRow) => {
     const tab = row.tab === 'completed' ? 'completed' : 'active';
     navigate(`${workflowPath(row.workflow)}?tab=${tab}&search=${encodeURIComponent(row.mid)}&openMid=${encodeURIComponent(row.mid)}`);
-    setSelectedMetric(null);
+    setDashboardSelection(null);
   };
   const dateRangeLabel =
     dateFrom || dateTo ? `${dateFrom || 'Start'} to ${dateTo || 'Today'}` : null;
@@ -501,6 +568,8 @@ export default function Overview() {
     if (!data) return;
     setDownloading(true);
     setDownloadOpen(false);
+    setDownloadMenuLevel('root');
+    setDownloadError(null);
     try {
       const base = `sdms_dashboard_${new Date().toISOString().slice(0, 10)}`;
       const rows = [
@@ -521,6 +590,39 @@ export default function Overview() {
     } finally {
       setDownloading(false);
     }
+  }
+
+  async function handleDataDownload(format: 'csv' | 'xlsx' | 'pdf') {
+    setDownloading(true);
+    setDownloadOpen(false);
+    setDownloadMenuLevel('root');
+    setDownloadError(null);
+    try {
+      const exportData = await callApi<DashboardExportData>('dashboard.exportData', {
+        ...(hasFullVisibility && branchFilter ? { branch: branchFilter } : {}),
+        ...(hasFullVisibility && workflowFilter ? { workflow: workflowFilter } : {}),
+        ...(dateFrom ? { dateFrom } : {}),
+        ...(dateTo ? { dateTo } : {})
+      });
+      downloadDashboardDataFile(format, exportData);
+    } catch (error) {
+      const detail = error instanceof ApiError
+        ? error.code
+        : error instanceof Error ? error.message : 'Unexpected error';
+      setDownloadError(`Could not download data: ${detail}`);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  function toggleDownloadMenu() {
+    if (downloadOpen) {
+      setDownloadOpen(false);
+      return;
+    }
+    setDownloadMenuLevel(canDownloadData ? 'root' : 'dashboard');
+    setDownloadError(null);
+    setDownloadOpen(true);
   }
 
   return (
@@ -554,6 +656,63 @@ export default function Overview() {
             )}
           </button>
 
+          <div className="relative z-30">
+            <button
+              onClick={toggleDownloadMenu}
+              disabled={!data || downloading}
+              aria-label="Download"
+              title="Download"
+              className="flex items-center gap-1.5 rounded-md bg-ink-900 text-paper px-3 py-1.5 text-xs hover:bg-ink-700 transition-colors disabled:opacity-60"
+            >
+              <Download size={13} />
+              {user?.role !== 'SCM' && (downloading ? 'Preparing…' : 'Download')}
+              <ChevronDown size={12} className={downloadOpen ? 'rotate-180' : ''} />
+            </button>
+            {downloadOpen && (
+              <div className="absolute right-0 mt-2 w-52 rounded-md border border-ink-100 bg-white shadow-panel py-1.5 z-30">
+                {downloadMenuLevel === 'root' && canDownloadData ? (
+                  <>
+                    <button onClick={() => setDownloadMenuLevel('dashboard')} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-paper">
+                      <FileText size={15} /> Dashboard
+                    </button>
+                    <button onClick={() => setDownloadMenuLevel('data')} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-paper">
+                      <FileSpreadsheet size={15} /> Data
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {canDownloadData && (
+                      <button onClick={() => setDownloadMenuLevel('root')} className="w-full px-3 py-2 text-xs text-left text-ink-700/60 hover:bg-paper">
+                        ← Dashboard / Data
+                      </button>
+                    )}
+                    <p className="px-3 py-1 text-xs font-medium text-ink-700/60">
+                      {downloadMenuLevel === 'data' ? 'Download data as' : 'Download dashboard as'}
+                    </p>
+                    <button
+                      onClick={() => downloadMenuLevel === 'data' ? void handleDataDownload('csv') : handleDownload('csv')}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-paper"
+                    >
+                      <FileText size={15} /> CSV (.csv)
+                    </button>
+                    <button
+                      onClick={() => downloadMenuLevel === 'data' ? void handleDataDownload('xlsx') : handleDownload('xlsx')}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-paper"
+                    >
+                      <FileSpreadsheet size={15} /> Excel (.xlsx)
+                    </button>
+                    <button
+                      onClick={() => downloadMenuLevel === 'data' ? void handleDataDownload('pdf') : handleDownload('pdf')}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-paper"
+                    >
+                      <FileDown size={15} /> PDF (.pdf)
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
           {activeFilterCount > 0 && (
             <button
               onClick={clearAllFilters}
@@ -564,21 +723,13 @@ export default function Overview() {
             </button>
           )}
 
-          <div className="relative">
-            <button onClick={() => setDownloadOpen(v => !v)} disabled={!data || downloading} className="flex items-center gap-1.5 rounded-md bg-ink-900 text-paper px-3 py-1.5 text-xs hover:bg-ink-700 transition-colors disabled:opacity-60">
-              <Download size={13} />{downloading ? 'Preparing…' : 'Download'}<ChevronDown size={12} className={downloadOpen ? 'rotate-180' : ''} />
-            </button>
-            {downloadOpen && <div className="absolute right-0 mt-2 w-52 rounded-md border border-ink-100 bg-white shadow-panel py-1.5 z-30">
-              <button onClick={() => handleDownload('csv')} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-paper"><FileText size={15}/>CSV (.csv)</button>
-              <button onClick={() => handleDownload('xlsx')} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-paper"><FileSpreadsheet size={15}/>Excel (.xlsx)</button>
-              <button onClick={() => handleDownload('pdf')} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-paper"><FileDown size={15}/>PDF (.pdf)</button>
-            </div>}
-          </div>
+          {downloadError && <p role="alert" className="basis-full text-right text-xs text-reject">{downloadError}</p>}
+
         </div>
       </div>
 
       {/* Filters slide-over panel */}
-      <div className={`fixed inset-0 z-40 ${filtersOpen ? '' : 'pointer-events-none'}`} aria-hidden={!filtersOpen}>
+      <div className={`fixed inset-x-0 top-12 bottom-0 z-40 ${filtersOpen ? '' : 'pointer-events-none'}`} aria-hidden={!filtersOpen}>
         <div
           onClick={() => setFiltersOpen(false)}
           className={`absolute inset-0 bg-ink-950/40 transition-opacity duration-200 ${
@@ -743,7 +894,7 @@ export default function Overview() {
                 <button
                   key={key}
                   type="button"
-                  onClick={() => setSelectedMetric(key)}
+                  onClick={() => setDashboardSelection({ kind: 'metric', metric: key })}
                   aria-label={`View ${label.toLowerCase()} records`}
                   className="text-left bg-white rounded-lg border border-ink-100 shadow-panel px-4 py-4 flex flex-col gap-3 hover:border-ink-300 hover:shadow-md transition-shadow"
                 >
@@ -893,6 +1044,10 @@ export default function Overview() {
                           dataKey="count"
                           radius={workflow === 'Discontinue' ? [4, 4, 0, 0] : [0, 4, 4, 0]}
                           barSize={workflow === 'Discontinue' ? 28 : 18}
+                          cursor={hasFullVisibility ? 'pointer' : 'default'}
+                          onClick={hasFullVisibility
+                            ? (entry) => openStatusDistribution(workflow, String(entry.status ?? ''))
+                            : undefined}
                         >
                           {workflow === 'Discontinue' ? (
                             <LabelList dataKey="count" position="top" fill="#0E1230" fontSize={10} />
@@ -1042,7 +1197,7 @@ export default function Overview() {
         )}
       </div>
 
-      {selectedMetric && (
+      {dashboardSelection && (
         <div className="fixed inset-0 z-50 bg-ink-950/45 flex items-center justify-center p-4" role="dialog" aria-modal="true">
           <div
             className="w-[80vw] min-w-[min(95vw,36rem)] h-[80vh] min-h-[18rem] max-w-[95vw] max-h-[90vh] resize overflow-hidden bg-white rounded-lg shadow-panel flex flex-col"
@@ -1050,12 +1205,16 @@ export default function Overview() {
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-ink-100">
               <div>
-                <h3 className="font-display text-lg">{CARD_DEFS.find((card) => card.key === selectedMetric)?.label} records</h3>
+                <h3 className="font-display text-lg">
+                  {dashboardSelection.kind === 'metric'
+                    ? `${CARD_DEFS.find((card) => card.key === dashboardSelection.metric)?.label} records`
+                    : `${dashboardSelection.workflow} — ${dashboardSelection.status} records`}
+                </h3>
                 <p className="text-xs text-ink-700/60 mt-0.5">
                   {dashboardRowsQuery.data ? `${visibleDashboardRows.length} of ${dashboardRowsQuery.data.total} record(s)` : 'Matching the current overview filters'}
                 </p>
               </div>
-              <button type="button" onClick={() => setSelectedMetric(null)} aria-label="Close records" className="text-ink-700/50 hover:text-ink-900">
+              <button type="button" onClick={() => setDashboardSelection(null)} aria-label="Close records" className="text-ink-700/50 hover:text-ink-900">
                 <X size={18} />
               </button>
             </div>
@@ -1063,7 +1222,7 @@ export default function Overview() {
               {dashboardRowsQuery.isLoading && <p className="text-sm text-ink-700/60">Loading records…</p>}
               {dashboardRowsQuery.isError && <p className="text-sm text-reject">Couldn&rsquo;t load records. Please close and try again.</p>}
               {dashboardRowsQuery.data && dashboardRowsQuery.data.rows.length === 0 && (
-                <p className="text-sm text-ink-700/60">No records match this KPI and the current filters.</p>
+                <p className="text-sm text-ink-700/60">No records match this selection and the current filters.</p>
               )}
               {dashboardRowsQuery.data && dashboardRowsQuery.data.rows.length > 0 && (
                 <div className="flex h-full min-h-0 min-w-[900px] flex-col">
@@ -1083,7 +1242,7 @@ export default function Overview() {
                           {selectedBranches.length > 0 && <span className="rounded-full bg-ink-900 px-1.5 text-white">{selectedBranches.length}</span>}
                         </button>
                         {openColumnFilter === 'branch' && (
-                          <div ref={columnFilterMenuRef} className="absolute left-0 top-full z-50 mt-1 max-h-64 w-56 overflow-y-auto rounded-md border border-ink-200 bg-white p-2 shadow-panel">
+                          <div ref={columnFilterMenuRef} className="overview-filter-menu absolute left-0 top-full z-50 mt-1 max-h-64 w-56 overflow-y-auto rounded-md border border-ink-200 bg-white p-2 shadow-panel">
                             <div className="flex justify-between border-b border-ink-100 px-2 pb-2">
                               <span className="text-[11px] text-ink-700/60">Select branches</span>
                               <button type="button" onClick={() => setSelectedBranches([])} className="text-[11px] text-ink-700/60 hover:text-ink-900">Clear</button>
@@ -1103,7 +1262,7 @@ export default function Overview() {
                           {selectedWorkflows.length > 0 && <span className="rounded-full bg-ink-900 px-1.5 text-white">{selectedWorkflows.length}</span>}
                         </button>
                         {openColumnFilter === 'workflow' && (
-                          <div ref={columnFilterMenuRef} className="absolute left-0 top-full z-50 mt-1 max-h-64 w-56 overflow-y-auto rounded-md border border-ink-200 bg-white p-2 shadow-panel">
+                          <div ref={columnFilterMenuRef} className="overview-filter-menu absolute left-0 top-full z-50 mt-1 max-h-64 w-56 overflow-y-auto rounded-md border border-ink-200 bg-white p-2 shadow-panel">
                             <div className="flex justify-between border-b border-ink-100 px-2 pb-2">
                               <span className="text-[11px] text-ink-700/60">Select workflows</span>
                               <button type="button" onClick={() => setSelectedWorkflows([])} className="text-[11px] text-ink-700/60 hover:text-ink-900">Clear</button>
@@ -1123,7 +1282,7 @@ export default function Overview() {
                           {selectedStatuses.length > 0 && <span className="rounded-full bg-ink-900 px-1.5 text-white">{selectedStatuses.length}</span>}
                         </button>
                         {openColumnFilter === 'status' && (
-                          <div ref={columnFilterMenuRef} className="absolute left-0 top-full z-50 mt-1 max-h-64 w-64 overflow-y-auto rounded-md border border-ink-200 bg-white p-2 shadow-panel">
+                          <div ref={columnFilterMenuRef} className="overview-filter-menu absolute left-0 top-full z-50 mt-1 max-h-64 w-64 overflow-y-auto rounded-md border border-ink-200 bg-white p-2 shadow-panel">
                             <div className="flex justify-between border-b border-ink-100 px-2 pb-2">
                               <span className="text-[11px] text-ink-700/60">Select statuses</span>
                               <button type="button" onClick={() => setSelectedStatuses([])} className="text-[11px] text-ink-700/60 hover:text-ink-900">Clear</button>

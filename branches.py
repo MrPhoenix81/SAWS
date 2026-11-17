@@ -1,6 +1,6 @@
 """
 branches.py
-Admin-managed list of branches. Direct port of Branches.gs.
+Admin/Head Office-managed list of branches. Direct port of Branches.gs.
 
 Branches are SOFT-deleted only: deleting a branch just marks it
 Active = FALSE. It disappears from every normal dropdown but
@@ -32,7 +32,7 @@ def list_branches_(include_inactive):
     """
     include_inactive=False (default): what every normal dropdown/
     filter should call - only branches currently in use.
-    include_inactive=True: Admin branch-management screen only.
+    include_inactive=True: Admin and Head Office branch-management screens.
     """
     rows = read_sheet_as_objects_(config.SHEET_BRANCHES)
     filtered = rows if include_inactive else [r for r in rows if is_branch_active_(r)]
@@ -41,7 +41,7 @@ def list_branches_(include_inactive):
 
 def create_branch_(acting_user, payload):
     """
-    Admin-only. Creates a new branch, or - if a branch with that
+    Admin or Head Office. Creates a new branch, or - if a branch with that
     name already exists but was soft-deleted - reactivates it
     instead of creating a duplicate row.
     """
@@ -65,7 +65,7 @@ def create_branch_(acting_user, payload):
 
 
 def delete_branch_(acting_user, payload):
-    """Admin-only. SOFT delete: flips Active to FALSE."""
+    """Admin or Head Office. SOFT delete: flips Active to FALSE."""
     name = normalize_branch_name_(payload.get('name'))
     if not name:
         raise ApiError('BAD_REQUEST')
@@ -83,7 +83,7 @@ def delete_branch_(acting_user, payload):
 
 
 def reactivate_branch_(acting_user, payload):
-    """Admin-only. Undoes a soft delete."""
+    """Admin or Head Office. Undoes a soft delete."""
     name = normalize_branch_name_(payload.get('name'))
     if not name:
         raise ApiError('BAD_REQUEST')

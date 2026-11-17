@@ -19,11 +19,10 @@ import storage
 from db_utils import (
     read_sheet_as_objects_, append_row_, update_row_fields_, delete_row_,
     invalidate_cache_, now_iso_, format_date_only_, mid_exists_anywhere_, validate_phone_numbers_,
-    screenshot_keys_, collect_screenshot_keys_,
+    screenshot_keys_, collect_screenshot_keys_, query_sheet_page_, fetch_all_,
 )
 from auth import ApiError, require_role_
 from audit_log import log_audit_
-from notifications import notify_branch_roles_
 from filters import (
     is_scm_editable_stage_, is_hof_editable_stage_, is_manager_editable_stage_,
     filter_student_rows_for_user_, get_rejected_roles_,
@@ -110,13 +109,6 @@ def submit_student_entry_(user, payload):
 
     append_row_(config.SHEET_RESPONSE, row)
 
-    notify_branch_roles_(
-        row['Branch'], [config.ROLE_HOF, config.ROLE_MANAGER],
-        f"New discontinuation entry submitted for {row['Student Name']} ({row['MID']})",
-        config.NOTIF_SUBMITTED, row['MID'],
-        config.PAGE_DISCONTINUE
-    )
-
     log_audit_(user['email'], 'CREATE', 'Submitted student ' + str(row['MID']), row['Branch'], payload.get('browser'))
     log_stage_transition_(user, row['MID'], row['Branch'], '(new)',
                            config.STATUS_LABELS[config.STATUS_PENDING_HOF_MANAGER], payload.get('browser'))
@@ -155,10 +147,10 @@ def _clear_correction_flag_(row, role, extra_fields):
     Shared logic for "a flagged role just resubmitted after a Head
     Office rejection": removes `role` from Rejected Roles; if that
     was the last flagged role, moves the record back to Head Office
-    for re-review and notifies Head Office; otherwise stays in
-    PENDING_CORRECTION waiting on whoever's left.
+    for re-review; otherwise stays in PENDING_CORRECTION waiting on
+    whoever's left.
     Mutates `extra_fields` (the dict about to be written) in place
-    and returns the resulting Status for logging/notification.
+    and returns the resulting Status for logging.
     """
     remaining = [r for r in get_rejected_roles_(row) if r != role]
     extra_fields['Rejected Roles'] = ','.join(remaining)
@@ -310,21 +302,6 @@ def submit_scm_reason_(user, mid, reason, screenshot, browser, screenshots=None)
 
     update_row_fields_(config.SHEET_RESPONSE, row['__row'], fields)
 
-    if is_full_reset:
-        notify_branch_roles_(
-            row['Branch'], [config.ROLE_HOF, config.ROLE_MANAGER],
-            f"SCM revised the entry for {row['Student Name']} ({mid}) after rejection. Please review.",
-            config.NOTIF_SUBMITTED, mid,
-        config.PAGE_DISCONTINUE
-    )
-    elif is_targeted_correction and fields['Status'] == config.STATUS_PENDING_HEAD_OFFICE:
-        notify_branch_roles_(
-            row['Branch'], [config.ROLE_HEAD_OFFICE],
-            f"SCM corrected their reason for {row['Student Name']} ({mid}). Ready for your review again.",
-            config.NOTIF_READY_HEAD_OFFICE, mid,
-        config.PAGE_DISCONTINUE
-    )
-
     log_audit_(user['email'], 'UPDATE', 'SCM reason submitted for ' + str(mid), row['Branch'], browser)
     log_stage_transition_(user, mid, row['Branch'], from_label,
                            config.STATUS_LABELS.get(fields.get('Status', row.get('Status')), row.get('Status')), browser)
@@ -367,16 +344,6 @@ def submit_hof_reason_(user, mid, confirmed_reason, screenshot, browser):
 
     update_row_fields_(config.SHEET_RESPONSE, row['__row'], fields)
 
-    if new_status == config.STATUS_PENDING_HEAD_OFFICE:
-        notify_branch_roles_(
-            row['Branch'], [config.ROLE_HEAD_OFFICE],
-            f"Entry for {row['Student Name']} ({mid}) is ready for Head Office approval.",
-            config.NOTIF_READY_HEAD_OFFICE, mid,
-        config.PAGE_DISCONTINUE
-    )
-    # If Manager still pending (either still-open first pass, or still
-    # flagged in a targeted correction): no one else is notified yet.
-
     log_audit_(user['email'], 'UPDATE', 'HOF reason submitted for ' + str(mid), row['Branch'], browser)
     log_stage_transition_(user, mid, row['Branch'], from_label, config.STATUS_LABELS[new_status], browser)
     invalidate_cache_(['dashboard_' + row['Branch'], 'dashboard_ALL'])
@@ -412,14 +379,6 @@ def submit_manager_reason_(user, mid, verified_reason, screenshot, browser):
 
     update_row_fields_(config.SHEET_RESPONSE, row['__row'], fields)
 
-    if new_status == config.STATUS_PENDING_HEAD_OFFICE:
-        notify_branch_roles_(
-            row['Branch'], [config.ROLE_HEAD_OFFICE],
-            f"Entry for {row['Student Name']} ({mid}) is ready for Head Office approval.",
-            config.NOTIF_READY_HEAD_OFFICE, mid,
-        config.PAGE_DISCONTINUE
-    )
-
     log_audit_(user['email'], 'UPDATE', 'Manager reason submitted for ' + str(mid), row['Branch'], browser)
     log_stage_transition_(user, mid, row['Branch'], from_label, config.STATUS_LABELS[new_status], browser)
     invalidate_cache_(['dashboard_' + row['Branch'], 'dashboard_ALL'])
@@ -441,13 +400,6 @@ def head_office_approve_(user, mid, browser):
         'Head Office Name': user['name'],
         'Head Office Date': now_iso_(),
     })
-
-    notify_branch_roles_(
-        row['Branch'], [config.ROLE_ADMIN],
-        f"Entry for {row['Student Name']} ({mid}) was approved by Head Office and is ready for Admin verification.",
-        config.NOTIF_READY_ADMIN, mid,
-        config.PAGE_DISCONTINUE
-    )
 
     log_audit_(user['email'], 'APPROVE', 'Head Office approved student ' + str(mid), row['Branch'], browser)
     log_stage_transition_(user, mid, row['Branch'], config.STATUS_LABELS[config.STATUS_PENDING_HEAD_OFFICE],
@@ -484,14 +436,6 @@ def head_office_reject_(user, mid, rejection_reason, rejected_roles, browser):
         'Last Rejected Stage': 'Head Office',
         'Last Rejected Date': now_iso_(),
     })
-
-    notify_branch_roles_(
-        row['Branch'], roles,
-        f"Entry for {row['Student Name']} ({mid}) was REJECTED by Head Office - "
-        f"{', '.join(roles)} must correct their reason. Reason given: {rejection_reason}",
-        config.NOTIF_HEAD_OFFICE_REJECTED, mid,
-        config.PAGE_DISCONTINUE
-    )
 
     log_audit_(
         user['email'], 'REJECT',
@@ -692,13 +636,6 @@ def approve_student_entry_(user, mid, browser):
     append_row_(config.SHEET_COMPLETED, completed_row)
     delete_row_(config.SHEET_RESPONSE, row['__row'])
 
-    notify_branch_roles_(
-        row['Branch'], [config.ROLE_SCM, config.ROLE_HOF, config.ROLE_MANAGER, config.ROLE_HEAD_OFFICE],
-        f"Entry for {row['Student Name']} ({mid}) has been given FINAL VERIFICATION by Admin. Student is now Discontinued.",
-        config.NOTIF_APPROVED, mid,
-        config.PAGE_DISCONTINUE
-    )
-
     log_audit_(user['email'], 'APPROVE', 'Admin gave final verification for student ' + str(mid), row['Branch'], browser)
     log_stage_transition_(user, mid, row['Branch'], config.STATUS_LABELS[config.STATUS_PENDING_ADMIN],
                            config.STATUS_LABELS[config.STATUS_APPROVED], browser)
@@ -733,13 +670,6 @@ def reject_student_entry_(user, mid, rejection_reason, browser):
         'Last Rejected Stage': 'Admin',
         'Last Rejected Date': now_iso_(),
     })
-
-    notify_branch_roles_(
-        row['Branch'], [config.ROLE_SCM],
-        f"Entry for {row['Student Name']} ({mid}) was REJECTED by Admin. Reason: {rejection_reason}",
-        config.NOTIF_REJECTED, mid,
-        config.PAGE_DISCONTINUE
-    )
 
     log_audit_(user['email'], 'REJECT', f"Admin rejected student {mid}: {rejection_reason}", row['Branch'], browser)
     log_stage_transition_(user, mid, row['Branch'], config.STATUS_LABELS[config.STATUS_PENDING_ADMIN],
@@ -786,9 +716,80 @@ def delete_student_entry_(user, mid, sheet_key, confirm_mid, browser):
     return {'success': True}
 
 
+def _list_students_page_from_db_(user, sheet_name, params):
+    unsupported_filters = (
+        'phone', 'entryDateFrom', 'entryDateTo', 'lastPresentFrom', 'lastPresentTo',
+    )
+    if any(params.get(key) for key in unsupported_filters):
+        return None
+
+    sort_by = params.get('sortBy')
+    string_sort_fields = {
+        'MID', 'Branch', 'Batch Name', 'Faculty Name', 'Student Name',
+        'Phone Number 1', 'Phone Number 2', 'Phone Number 3', 'Status',
+    }
+    if sort_by and sort_by not in string_sort_fields:
+        return None
+
+    page = int(params.get('page') or 1)
+    page_size = int(params.get('pageSize') or 25)
+    if page < 1 or page_size < 1:
+        return None
+
+    filters = []
+    if user.get('role') not in config.GLOBAL_VISIBILITY_ROLES:
+        filters.append(('Branch', 'eq', user.get('branch') or ''))
+    elif params.get('branch'):
+        filters.append(('Branch', 'eq', params['branch']))
+    if params.get('status'):
+        filters.append(('Status', 'eq', params['status']))
+    if params.get('mid'):
+        filters.append(('MID', 'contains_case_sensitive', params['mid']))
+    if params.get('studentName'):
+        filters.append(('Student Name', 'contains', params['studentName']))
+    if params.get('batch'):
+        batch = str(params['batch']).strip()
+        if batch:
+            filters.append(('Batch Name', 'contains', batch))
+
+    is_active_discontinue = sheet_name == config.SHEET_RESPONSE
+    if sort_by:
+        order_by = [('text', sort_by, 'DESC' if params.get('sortDir') == 'desc' else 'ASC')]
+    elif is_active_discontinue and user.get('role') == config.ROLE_ADMIN:
+        order_by = [('status_priority', 'Status', 'ASC', config.STATUS_PENDING_ADMIN)]
+    elif is_active_discontinue and user.get('role') == config.ROLE_HEAD_OFFICE:
+        order_by = [('status_priority', 'Status', 'ASC', config.STATUS_PENDING_HEAD_OFFICE)]
+    else:
+        order_by = []
+    order_by.append(('id', '', 'ASC'))
+
+    result = query_sheet_page_(
+        sheet_name,
+        filters=filters,
+        search=params.get('search'),
+        search_fields=('MID', 'Student Name', 'Phone Number 1', 'Phone Number 2', 'Phone Number 3'),
+        order_by=order_by,
+        page=page,
+        page_size=page_size,
+    )
+    rows = result['rows']
+    if sheet_name in (config.SHEET_RESPONSE, config.SHEET_COMPLETED):
+        rows = _attach_inactive_conversion_dates_(rows)
+    return {
+        'total': result['total'],
+        'page': page,
+        'pageSize': page_size,
+        'rows': filter_student_rows_for_user_(rows, user),
+    }
+
+
 def list_students_(user, sheet_name, params):
     """List entries visible to this user, with optional search/filter params."""
     params = params or {}
+    optimized_result = _list_students_page_from_db_(user, sheet_name, params)
+    if optimized_result is not None:
+        return optimized_result
+
     rows = read_sheet_as_objects_(sheet_name)
     if sheet_name in (config.SHEET_RESPONSE, config.SHEET_COMPLETED):
         rows = _attach_inactive_conversion_dates_(rows)
@@ -882,23 +883,6 @@ def list_students_(user, sheet_name, params):
 
     filtered = filter_student_rows_for_user_(rows, user)
 
-    # "My turn" count for the sidebar badge: how many of this user's
-    # visible active rows are actually awaiting THEIR action right now.
-    # Deliberately role-specific rather than reusing the raw 'canEdit'
-    # flag everywhere - for Head Office/Admin, canEdit on a row is
-    # always true (they can edit any row), which would make the badge
-    # never clear. What actually clears their badge is the row reaching
-    # the status they're meant to act on.
-    role = user['role']
-    if role in (config.ROLE_SCM, config.ROLE_HOF, config.ROLE_MANAGER):
-        pending_for_me = sum(1 for r in filtered if r.get('canEdit'))
-    elif role == config.ROLE_HEAD_OFFICE:
-        pending_for_me = sum(1 for r in filtered if r.get('Status') == config.STATUS_PENDING_HEAD_OFFICE)
-    elif role == config.ROLE_ADMIN:
-        pending_for_me = sum(1 for r in filtered if r.get('Status') == config.STATUS_PENDING_ADMIN)
-    else:
-        pending_for_me = 0
-
     if params.get('sortBy'):
         sort_student_rows_(filtered, params['sortBy'], params.get('sortDir'))
     elif sheet_name == config.SHEET_RESPONSE:
@@ -915,14 +899,39 @@ def list_students_(user, sheet_name, params):
     start = (page - 1) * page_size
     page_rows = filtered[start:start + page_size]
 
-    return {'total': len(filtered), 'page': page, 'pageSize': page_size, 'rows': page_rows, 'pendingForMe': pending_for_me}
+    return {'total': len(filtered), 'page': page, 'pageSize': page_size, 'rows': page_rows}
 
 
 def _attach_inactive_conversion_dates_(student_rows):
     """Include conversion dates for older discontinue rows created from inactive records."""
-    converted_rows = read_sheet_as_objects_(config.SHEET_INACTIVE_COMPLETED)
+    mids = sorted({
+        str(row.get('MID') or '').strip()
+        for row in student_rows
+        if str(row.get('MID') or '').strip()
+    })
+    if not mids:
+        return student_rows
+
+    placeholders = ', '.join(['%s'] * len(mids))
+    converted_rows = fetch_all_(
+        f'''
+        SELECT jsonb_build_object(
+            'Converted To Discontinue MID', data->>'Converted To Discontinue MID',
+            'Converted Date', data->>'Converted Date',
+            'Last Present Day', data->>'Last Present Day',
+            'Approval Date', data->>'Approval Date'
+        ) AS data
+        FROM sheet_rows
+        WHERE sheet_name = %s
+          AND data->>'Converted To Discontinue MID' IN ({placeholders})
+          AND COALESCE(data->>'Converted Date', '') <> ''
+        ORDER BY id ASC
+        ''',
+        (config.SHEET_INACTIVE_COMPLETED, *mids),
+    )
     dates_by_mid = {}
-    for inactive_row in converted_rows:
+    for record in converted_rows:
+        inactive_row = record['data']
         converted_mid = str(inactive_row.get('Converted To Discontinue MID') or '').strip()
         if not converted_mid or not inactive_row.get('Converted Date'):
             continue

@@ -88,6 +88,36 @@ class DashboardMonthlyBranchCountTests(unittest.TestCase):
         self.assertEqual(result['charts']['monthlyBranchCount'], [{'branch': 'BETA', 'count': 2}])
         self.assertEqual(result['charts']['dailyBranchCount'], [])
 
+    def test_branch_workflow_counts_include_all_active_and_approved_records(self):
+        self.sheets[config.SHEET_INACTIVE_COMPLETED].append({
+            'Branch': 'BETA',
+            'Status': config.STATUS_INACTIVE_APPROVED,
+            'Entry Date': '2026-11-14',
+        })
+
+        result = self._get_dashboard({'role': config.ROLE_ADMIN, 'branch': ''})
+        counts_by_branch = {
+            entry['branch']: entry['workflows']
+            for entry in result['charts']['branchWorkflowCount']
+        }
+
+        self.assertEqual(counts_by_branch['ALPHA']['Discontinue'], {
+            'active': 3, 'approved': 1, 'total': 4,
+        })
+        self.assertEqual(counts_by_branch['BETA']['Inactive'], {
+            'active': 1, 'approved': 2, 'total': 3,
+        })
+        self.assertEqual(counts_by_branch['BETA']['Transfer'], {
+            'active': 1, 'approved': 0, 'total': 1,
+        })
+        self.assertEqual(counts_by_branch['EMPTY']['Discontinue'], {
+            'active': 0, 'approved': 0, 'total': 0,
+        })
+        self.assertEqual(
+            result['charts']['dailyBranchCount'],
+            [{'branch': 'BETA', 'count': 2}, {'branch': 'ALPHA', 'count': 1}],
+        )
+
 
 if __name__ == '__main__':
     unittest.main()

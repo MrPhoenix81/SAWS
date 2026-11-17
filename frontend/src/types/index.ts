@@ -92,14 +92,7 @@ export interface StudentEntry {
   'Rejected Roles'?: string;
   /** Which role(s) Head Office flagged on the most recent rejection and still owe a corrected reason. */
   'Rejected Roles List'?: CorrectableRole[];
-  /**
-   * Admin/Head Office only: true when this row's Status is the exact
-   * stage that role can currently act on (PENDING_ADMIN for Admin,
-   * PENDING_HEAD_OFFICE for Head Office). Server-computed (see
-   * filters.py:filter_student_row_for_role_) - used purely to group/
-   * highlight "needs your decision" rows vs everyone else's status,
-   * since both roles can now see every stage instead of only their own.
-   */
+  /** True when this row is awaiting action from the signed-in user's role. */
   'Awaiting My Action'?: boolean;
 }
 
@@ -118,23 +111,6 @@ export interface AdminStudentEditFields {
   'Reason (HOF)'?: string;
   'Reason (Manager)'?: string;
   Status?: StudentStatus;
-}
-
-export interface AppNotification {
-  id: string;
-  message: string;
-  type:
-    | 'SUBMITTED'
-    | 'WAITING_FOR_MANAGER'
-    | 'WAITING_FOR_HOF'
-    | 'READY_FOR_HEAD_OFFICE'
-    | 'READY_FOR_ADMIN'
-    | 'HEAD_OFFICE_REJECTED'
-    | 'APPROVED'
-    | 'REJECTED';
-  relatedMid: string;
-  read: boolean;
-  createdDate: string;
 }
 
 export interface DashboardCards {
@@ -171,6 +147,19 @@ export interface BranchEntryCount {
   count: number;
 }
 
+export type DashboardWorkflow = 'Discontinue' | 'Inactive' | 'Transfer';
+
+export interface DailyWorkflowCounts {
+  active: number;
+  approved: number;
+  total: number;
+}
+
+export interface DailyBranchWorkflowCount {
+  branch: string;
+  workflows: Partial<Record<DashboardWorkflow, DailyWorkflowCounts>>;
+}
+
 export interface StatusCount {
   status: string;
   count: number;
@@ -184,6 +173,7 @@ export interface DashboardData {
   charts: {
     monthlyTrend: TrendPoint[];
     dailyBranchCount: BranchEntryCount[];
+    branchWorkflowCount: DailyBranchWorkflowCount[];
     monthlyBranchCount: BranchEntryCount[];
     branchComparison: BranchCount[];
     /** One sorted (highest -> lowest) status breakdown per workflow. Each
@@ -200,11 +190,6 @@ export interface StudentListResult {
   page: number;
   pageSize: number;
   rows: StudentEntry[];
-  /** Count of visible active rows currently awaiting THIS user's action
-   *  (their role's stage) - not just the total open count. Drives the
-   *  sidebar badge, which clears once their part is submitted and only
-   *  the next role in the chain sees it lit. */
-  pendingForMe?: number;
 }
 
 export interface StudentListParams {
@@ -362,8 +347,6 @@ export interface InactiveListResult {
   page: number;
   pageSize: number;
   rows: InactiveEntry[];
-  /** Count of visible active rows currently awaiting THIS user's action. */
-  pendingForMe?: number;
 }
 
 
@@ -387,6 +370,6 @@ export interface TransferEntry {
   'Last Rejection Reason'?: string; 'Last Rejected By'?: string; 'Last Rejected Stage'?: string; 'Last Rejected Date'?: string;
   canHeadOfficeApprove?: boolean; canHeadOfficeReject?: boolean; canAdminApprove?: boolean; canAdminReject?: boolean; canDelete?: boolean; canAdminEdit?: boolean;
 }
-export interface TransferListResult { total: number; page: number; pageSize: number; rows: TransferEntry[]; pendingForMe?: number; }
+export interface TransferListResult { total: number; page: number; pageSize: number; rows: TransferEntry[]; }
 export interface TransferSubmitPayload { mid: string; studentName: string; batchName?: string; facultyName?: string; phone1: string; phone2?: string; phone3?: string; transferToBranch: string; reason: string; screenshot?: ReasonScreenshot; screenshots?: ReasonScreenshot[]; }
 export interface TransferEditFields { MID?: string; 'Student Name'?: string; 'Phone Number 1'?: string; 'Phone Number 2'?: string; 'Phone Number 3'?: string; 'Transfer To Branch'?: string; Reason?: string; }

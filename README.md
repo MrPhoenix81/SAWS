@@ -219,11 +219,10 @@ problem. You can use both at once if you like extra safety.
 | No backup | `backup_to_sheets.py` writes a full daily snapshot to a separate Google Sheet (write-only, never read by the app) |
 | Single-process only (in-memory lock/cache assumed one worker) | Real database transactions — safe to scale to multiple workers later if needed |
 
-Every feature that existed before — student workflow (SCM → HOF →
-Manager → Head Office → Admin), Inactive requests, Transfers, Users,
-Branches, Notifications, Audit Log, login/forgot-password — works
-exactly the same from the app's point of view. Only where the data is
-stored changed.
+The student workflow (SCM → HOF → Manager → Head Office → Admin),
+Inactive requests, Transfers, Users, Branches, Audit Log, and
+login/forgot-password remain available. In-app notifications have been
+removed.
 
 SCMs may convert an approved inactive student from the dashboard by
 searching the student's MID. The conversion is restricted to their own

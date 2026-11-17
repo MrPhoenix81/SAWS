@@ -19,11 +19,10 @@ from db_utils import (
     read_sheet_as_objects_, append_row_, update_row_fields_, delete_row_,
     invalidate_cache_, now_iso_, format_date_only_, screenshot_keys_, collect_screenshot_keys_,
     mid_exists_anywhere_, convert_inactive_row_to_discontinue_,
-    validate_phone_numbers_,
+    validate_phone_numbers_, query_workflow_page_,
 )
 from auth import ApiError, require_role_
 from audit_log import log_audit_
-from notifications import notify_branch_roles_
 from filters import is_admin_final_approved_, days_since_last_present_
 
 
@@ -231,12 +230,6 @@ def submit_inactive_(user, payload):
 
     append_row_(config.SHEET_INACTIVE_RESPONSE, row)
 
-    notify_branch_roles_(
-        row['Branch'], [config.ROLE_HEAD_OFFICE],
-        f"New inactive request submitted for {row['Student Name']} ({row['MID']}).",
-        config.NOTIF_SUBMITTED, row['MID'],
-        config.PAGE_INACTIVE
-    )
     log_audit_(
         user['email'], 'CREATE',
         f"Submitted inactive request for {row['MID']}",
@@ -250,86 +243,25 @@ def list_inactive_(user, completed=False, params=None):
     """List active or approved inactive requests visible to the signed-in user."""
     params = params or {}
     sheet = config.SHEET_INACTIVE_COMPLETED if completed else config.SHEET_INACTIVE_RESPONSE
-    rows = read_sheet_as_objects_(sheet)
-    rows = [r for r in rows if r.get('Status') != config.STATUS_INACTIVE_CONVERTED]
-
-    if user['role'] not in config.GLOBAL_VISIBILITY_ROLES:
-        rows = [r for r in rows if r.get('Branch') == user.get('branch')]
-
-    if params.get('search'):
-        q = str(params['search']).strip().lower()
-        rows = [
-            r for r in rows
-            if q in str(r.get('MID', '')).lower()
-            or q in str(r.get('Student Name', '')).lower()
-            or any(q in str(r.get(k, '')).lower() for k in
-                   ('Phone Number 1', 'Phone Number 2', 'Phone Number 3'))
-        ]
-
-    if params.get('branch') and user['role'] in config.GLOBAL_VISIBILITY_ROLES:
-        rows = [r for r in rows if r.get('Branch') == params['branch']]
-
-    if params.get('batch'):
-        q = str(params['batch']).strip().lower()
-        if q:
-            rows = [r for r in rows if q in str(r.get('Batch Name', '')).lower()]
-
-    if params.get('status'):
-        rows = [r for r in rows if r.get('Status') == params['status']]
-
-    # Admin's Active page still shows ONLY requests pending Admin.
-    # Head Office is NOT restricted any more: it sees every request at
-    # every stage (like the Discontinue workflow), so it can still
-    # follow a request after it moves on to Admin. The frontend uses
-    # the 'Awaiting My Action' flag to separate the ones needing
-    # Head Office's own decision.
-    if not completed:
-        if user['role'] == config.ROLE_ADMIN:
-            rows = [r for r in rows if r.get('Status') == config.STATUS_INACTIVE_PENDING_ADMIN]
-
-    rows.sort(key=lambda r: str(r.get('Entry Date') or ''), reverse=True)
-
-    # Column sort requested from the table header (MID, student name,
-    # branch or status). It replaces the default ordering below.
-    sort_by = params.get('sortBy')
-    if sort_by in ('MID', 'Student Name', 'Branch', 'Status'):
-        descending = str(params.get('sortDir') or 'asc').lower() == 'desc'
-        rows.sort(key=lambda r: str(r.get(sort_by) or '').lower(), reverse=descending)
-    # Head Office: bubble requests sitting in its own queue to the top
-    # (stable sort keeps the newest-first order inside each group).
-    elif not completed and user['role'] == config.ROLE_HEAD_OFFICE:
-        rows.sort(key=lambda r: 0 if r.get('Status') == config.STATUS_INACTIVE_PENDING_HEAD_OFFICE else 1)
-
-    page = max(int(params.get('page') or 1), 1)
-    page_size = max(min(int(params.get('pageSize') or 25), 9999), 1)
-    start = (page - 1) * page_size
-    page_rows = rows[start:start + page_size]
-
-    # "My turn" count for the sidebar badge (computed over every visible
-    # active row, not just this page) - role-specific so the badge
-    # clears once THIS user's part is done rather than staying lit for
-    # everyone until the whole workflow finishes.
-    role = user['role']
-    if role == config.ROLE_SCM:
-        pending_for_me = sum(
-            1 for r in rows
-            if r.get('Branch') == user.get('branch') and r.get('Status') == config.STATUS_INACTIVE_PENDING_SCM
-        )
-    elif role == config.ROLE_HEAD_OFFICE:
-        pending_for_me = sum(1 for r in rows if r.get('Status') == config.STATUS_INACTIVE_PENDING_HEAD_OFFICE)
-    elif role == config.ROLE_ADMIN:
-        pending_for_me = sum(1 for r in rows if r.get('Status') == config.STATUS_INACTIVE_PENDING_ADMIN)
-    else:
-        pending_for_me = 0
-
+    result = query_workflow_page_(
+        sheet,
+        user,
+        params,
+        completed,
+        config.STATUS_INACTIVE_PENDING_ADMIN,
+        {
+            config.ROLE_SCM: config.STATUS_INACTIVE_PENDING_SCM,
+            config.ROLE_HEAD_OFFICE: config.STATUS_INACTIVE_PENDING_HEAD_OFFICE,
+            config.ROLE_ADMIN: config.STATUS_INACTIVE_PENDING_ADMIN,
+        },
+        exclude_status=config.STATUS_INACTIVE_CONVERTED,
+    )
     return {
-        'total': len(rows),
-        'page': page,
-        'pageSize': page_size,
-        'rows': [_serialize_(r, user) for r in page_rows],
-        'pendingForMe': pending_for_me,
+        'total': result['total'],
+        'page': result['page'],
+        'pageSize': result['pageSize'],
+        'rows': [_serialize_(row, user) for row in result['rows']],
     }
-
 
 def search_convertible_inactive_(user, query):
     """Search approved inactive records for an SCM within their own branch."""
@@ -487,11 +419,6 @@ def convert_inactive_to_discontinue_(user, mid, confirm_mid, fields, screenshots
         raise ApiError('AUTH_FORBIDDEN')
     storage.delete_screenshots_(inactive_screenshot_keys)
 
-    notify_branch_roles_(
-        row['Branch'], [config.ROLE_HOF, config.ROLE_MANAGER],
-        f"New discontinuation entry submitted for {row['Student Name']} ({normalized_mid})",
-        config.NOTIF_SUBMITTED, normalized_mid, config.PAGE_DISCONTINUE
-    )
     log_audit_(
         user['email'], 'CREATE',
         f"Converted inactive student {normalized_mid} to discontinuation; inactive reason cleared",
@@ -525,12 +452,6 @@ def head_office_approve_inactive_(user, mid, browser):
         'Head Office Date': now,
     })
 
-    notify_branch_roles_(
-        row['Branch'], [config.ROLE_ADMIN],
-        f"Inactive request for {row['Student Name']} ({mid}) is approved by Head Office and awaits Admin approval.",
-        config.NOTIF_READY_ADMIN, mid,
-        config.PAGE_INACTIVE
-    )
     log_audit_(user['email'], 'APPROVE',
                f"Head Office approved inactive request {mid}",
                row['Branch'], browser)
@@ -562,12 +483,6 @@ def head_office_reject_inactive_(user, mid, rejection_reason, browser):
         'Last Rejected Date': now,
     })
 
-    notify_branch_roles_(
-        row['Branch'], [config.ROLE_SCM],
-        f"Inactive request for {row['Student Name']} ({mid}) was rejected by Head Office. Reason: {rejection_reason}",
-        config.NOTIF_HEAD_OFFICE_REJECTED, mid,
-        config.PAGE_INACTIVE
-    )
     log_audit_(user['email'], 'REJECT',
                f"Head Office rejected inactive request {mid}: {rejection_reason}",
                row['Branch'], browser)
@@ -593,13 +508,6 @@ def admin_approve_inactive_(user, mid, browser):
     append_row_(config.SHEET_INACTIVE_COMPLETED, completed)
     delete_row_(config.SHEET_INACTIVE_RESPONSE, row['__row'])
 
-    notify_branch_roles_(
-        row['Branch'],
-        [config.ROLE_SCM, config.ROLE_HEAD_OFFICE],
-        f"Inactive request for {row['Student Name']} ({mid}) received final Admin approval.",
-        config.NOTIF_APPROVED, mid,
-        config.PAGE_INACTIVE
-    )
     log_audit_(user['email'], 'APPROVE',
                f"Admin approved inactive request {mid}",
                row['Branch'], browser)
@@ -629,12 +537,6 @@ def admin_reject_inactive_(user, mid, rejection_reason, browser):
         'Last Rejected Date': now,
     })
 
-    notify_branch_roles_(
-        row['Branch'], [config.ROLE_SCM],
-        f"Inactive request for {row['Student Name']} ({mid}) was rejected by Admin. Reason: {rejection_reason}",
-        config.NOTIF_REJECTED, mid,
-        config.PAGE_INACTIVE
-    )
     log_audit_(user['email'], 'REJECT',
                f"Admin rejected inactive request {mid}: {rejection_reason}",
                row['Branch'], browser)
@@ -808,12 +710,6 @@ def submit_inactive_correction_(user, mid, fields, browser):
 
     update_row_fields_(config.SHEET_INACTIVE_RESPONSE, row['__row'], update)
 
-    notify_branch_roles_(
-        row['Branch'], [config.ROLE_HEAD_OFFICE],
-        f"Corrected inactive request for {row['Student Name']} ({update.get('MID', mid)}) is ready for Head Office review.",
-        config.NOTIF_SUBMITTED, update.get('MID', mid),
-        config.PAGE_INACTIVE
-    )
     log_audit_(
         user['email'], 'UPDATE',
         f"SCM corrected inactive request {mid}",

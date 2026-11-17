@@ -44,12 +44,11 @@ import {
   scmUpdateStudentDetails,
   adminUpdateStudent,
   exportStudents,
-  markPageSeen,
   getReasonScreenshotUrl,
   ApiError
 } from '@/lib/apiClient';
 import { useAuth } from '@/context/AuthContext';
-import { BranchFilter, BatchFilter } from '@/components/ListControls';
+import { BranchFilter, BatchFilter, DEFAULT_PAGE_SIZE } from '@/components/ListControls';
 import type { StudentEntry, StudentStatus } from '@/types';
 import { STATUS_LABELS } from '@/types';
 
@@ -246,10 +245,10 @@ export default function Students() {
   const [sortBy, setSortBy] = useState<string>('');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [page, setPage] = useState(1);
-  // Rows-per-page selector: defaults to 15, with 20/50/100/All also
+  // Rows-per-page selector: defaults to 100, with 15/20/50/All also
   // available. "All" just requests a very large page size in one go
   // rather than switching to a different fetch strategy.
-  const [pageSize, setPageSize] = useState<PageSizeOption>(15);
+  const [pageSize, setPageSize] = useState<PageSizeOption>(DEFAULT_PAGE_SIZE);
   const effectivePageSize = pageSize === 'all' ? ALL_ROWS_PAGE_SIZE : pageSize;
 
   function selectPageSize(value: string) {
@@ -257,20 +256,7 @@ export default function Students() {
     setPage(1);
   }
 
-  // Item 7: opening this page clears the sidebar's red "unseen" badge
-  // for Discontinue - it does NOT depend on acting on anything, just
-  // on having opened the page. Re-fetch the badge right after so it
-  // drops to 0 immediately instead of waiting for the next poll.
-  useEffect(() => {
-    markPageSeen('discontinue')
-      .then(() => queryClient.invalidateQueries({ queryKey: ['activeCounts'] }))
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Lets NotificationBell deep-link here as /students?search=<MID> - only
-  // reacts to the URL changing (e.g. clicking another notification while
-  // already on this page), not to the user's own typing.
+  // React to a deep-linked search URL, not to the user's own typing.
   useEffect(() => {
     const fromUrl = searchParams.get('search');
     if (fromUrl && fromUrl !== search) {
@@ -403,7 +389,6 @@ export default function Students() {
   function resetFiltersAndReload() {
     setPage(1);
     queryClient.invalidateQueries({ queryKey: ['students'] });
-    queryClient.invalidateQueries({ queryKey: ['activeCounts'] });
   }
 
   /**
@@ -1246,12 +1231,12 @@ function StudentDetailsModal({
 
   const approveMutation = useMutation({
     mutationFn: () => approveStudentEntry(row.MID),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['students'] }); queryClient.invalidateQueries({ queryKey: ['activeCounts'] }); onClose(); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['students'] }); onClose(); },
     onError: (err) => setActionError(describeApiError(err, 'Could not approve this entry. Please try again.'))
   });
   const headOfficeApproveMutation = useMutation({
     mutationFn: () => headOfficeApprove(row.MID),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['students'] }); queryClient.invalidateQueries({ queryKey: ['activeCounts'] }); onClose(); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['students'] }); onClose(); },
     onError: (err) => setActionError(describeApiError(err, 'Could not approve this entry. Please try again.'))
   });
 
@@ -1417,12 +1402,12 @@ function StudentExpandedDetails({
 
   const approveMutation = useMutation({
     mutationFn: () => approveStudentEntry(row.MID),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['students'] }); queryClient.invalidateQueries({ queryKey: ['activeCounts'] }); onClose(); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['students'] }); onClose(); },
     onError: (err) => setActionError(describeApiError(err, 'Could not approve this entry. Please try again.'))
   });
   const headOfficeApproveMutation = useMutation({
     mutationFn: () => headOfficeApprove(row.MID),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['students'] }); queryClient.invalidateQueries({ queryKey: ['activeCounts'] }); onClose(); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['students'] }); onClose(); },
     onError: (err) => setActionError(describeApiError(err, 'Could not approve this entry. Please try again.'))
   });
 

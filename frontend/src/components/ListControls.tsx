@@ -20,6 +20,7 @@ import {
 
 export const PAGE_SIZE_OPTIONS = [15, 20, 50, 100] as const;
 export type PageSizeOption = (typeof PAGE_SIZE_OPTIONS)[number] | 'all';
+export const DEFAULT_PAGE_SIZE = 100;
 export const ALL_ROWS_PAGE_SIZE = 9999;
 
 /** Tailwind classes that pin a table's header row while its rows scroll. */

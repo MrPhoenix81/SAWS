@@ -11,7 +11,6 @@ import type {
   ReasonScreenshot,
   AdminStudentEditFields,
   Branch,
-  AppNotification,
   AuditLogEntry,
   TransferListResult,
   TransferSubmitPayload,
@@ -250,23 +249,6 @@ export async function resetUserPassword(email: string) {
 }
 
 /** Active branches only - what every dropdown/filter across the app should use. */
-/**
- * ---- Notifications ----
- * Purely in-app - see Notifications.gs. Polled by AppLayout's bell
- * icon on an interval, and refetched after any action a user takes.
- */
-export async function listNotifications() {
-  return callApi<AppNotification[]>('notifications.list');
-}
-
-export async function markNotificationRead(id: string) {
-  return callApi<{ success: true }>('notifications.markRead', { id });
-}
-
-export async function markAllNotificationsRead() {
-  return callApi<{ success: true }>('notifications.markAllRead');
-}
-
 /**
  * ---- Audit Logs ----
  * Admin/Head Office get every branch (omit branch to see all); every
@@ -702,13 +684,4 @@ export async function bulkDelete(
   mids?: string[]
 ) {
   return callApi<BulkDeleteResult>('bulk.delete', { workflow, sheet, branches, confirm, mids });
-}
-
-/** ---- Sidebar "unseen" badges (see notifications.py) ---- */
-export type SidebarPage = 'discontinue' | 'transfer' | 'inactive';
-export async function markPageSeen(page: SidebarPage) {
-  return callApi<{ success: true }>('pages.markSeen', { page });
-}
-export async function getUnseenCounts() {
-  return callApi<{ discontinue: number; transfer: number; inactive: number }>('pages.unseenCounts', {});
 }

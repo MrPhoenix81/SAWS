@@ -207,16 +207,6 @@ STATUS_LABELS = {
 # after a Head Office rejection.
 CORRECTABLE_ROLES = [ROLE_SCM, ROLE_HOF, ROLE_MANAGER]
 
-# ---- Notification types ----
-NOTIF_SUBMITTED = 'SUBMITTED'
-NOTIF_WAIT_MANAGER = 'WAITING_FOR_MANAGER'
-NOTIF_WAIT_HOF = 'WAITING_FOR_HOF'
-NOTIF_READY_HEAD_OFFICE = 'READY_FOR_HEAD_OFFICE'
-NOTIF_READY_ADMIN = 'READY_FOR_ADMIN'
-NOTIF_HEAD_OFFICE_REJECTED = 'HEAD_OFFICE_REJECTED'
-NOTIF_APPROVED = 'APPROVED'
-NOTIF_REJECTED = 'REJECTED'
-
 # ---- Students/Completed column order ----
 STUDENT_COLUMNS = [
     'Sl No', 'Branch', 'Batch Name', 'Faculty Name', 'MID', 'Student Name',
@@ -257,14 +247,6 @@ INACTIVE_COLUMNS = [
     'Last Rejection Reason', 'Last Rejected By', 'Last Rejected Stage', 'Last Rejected Date',
 ]
 
-# 'Page' tags which sidebar module a notification belongs to, so the
-# unseen-count badge for that module can be computed without having to
-# cross-reference the MID back into a workflow sheet. See notifications.py.
-PAGE_DISCONTINUE = 'discontinue'
-PAGE_TRANSFER = 'transfer'
-PAGE_INACTIVE = 'inactive'
-
-NOTIFICATION_COLUMNS = ['ID', 'ToEmail', 'Message', 'Type', 'Related MID', 'Read', 'Created Date', 'Page']
 AUDITLOG_COLUMNS = ['Timestamp', 'User Email', 'Action', 'Details', 'Branch', 'Browser']
 BACKUP_LOG_COLUMNS = ['Started At', 'Finished At', 'Status', 'Detail', 'Total Rows']
 CLEANUP_LOG_COLUMNS = ['Timestamp', 'Sheet', 'MID', 'Student Name', 'Admin Final Approval Date',

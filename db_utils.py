@@ -4,8 +4,8 @@ Low-level helpers for reading/writing application data, now backed
 by Postgres (Neon) instead of Google Sheets. This is a drop-in
 replacement for the old sheet_utils.py: every function name, its
 arguments, and what it returns are kept identical, so students.py,
-transfer.py, inactive.py, users.py, branches.py, notifications.py,
-audit_log.py, auth.py, dashboard.py and api.py did not need any
+transfer.py, inactive.py, users.py, branches.py, audit_log.py,
+auth.py, dashboard.py and api.py did not need any
 logic changes - only their `from sheet_utils import ...` line became
 `from db_utils import ...`.
 
@@ -258,7 +258,6 @@ def warm_sheet_cache_(names=None):
             config.SHEET_RESPONSE, config.SHEET_COMPLETED,
             config.SHEET_INACTIVE_RESPONSE, config.SHEET_INACTIVE_COMPLETED,
             config.SHEET_TRANSFER_RESPONSE, config.SHEET_TRANSFER_COMPLETED,
-            config.SHEET_NOTIFICATIONS,
         ]
     names = list(names)
     keys = {n: _sheet_rows_cache_key_(n) for n in names}
@@ -302,6 +301,203 @@ def read_sheet_as_objects_(name):
         lambda: _read_sheet_as_objects_uncached_(name),
         stale_ok=True,
     )
+
+
+def query_sheet_page_(
+    name,
+    filters=(),
+    search=None,
+    search_fields=(),
+    order_by=(),
+    page=1,
+    page_size=25,
+):
+    """Fetch one filtered page and its total without transferring the full sheet."""
+    where = ['sheet_name = %s']
+    where_params = [name]
+    for field, operator, value in filters:
+        if operator == 'eq':
+            where.append("data->>%s = %s")
+            where_params.extend((field, value))
+        elif operator == 'distinct':
+            where.append("data->>%s IS DISTINCT FROM %s")
+            where_params.extend((field, value))
+        elif operator == 'contains':
+            where.append("POSITION(%s IN LOWER(COALESCE(data->>%s, ''))) > 0")
+            where_params.extend((str(value).lower(), field))
+        elif operator == 'contains_case_sensitive':
+            where.append("POSITION(%s IN COALESCE(data->>%s, '')) > 0")
+            where_params.extend((str(value), field))
+        else:
+            raise ValueError(f'Unsupported sheet filter operator: {operator}')
+
+    term = str(search or '').strip().lower()
+    if term:
+        where.append('(' + ' OR '.join(
+            "POSITION(%s IN LOWER(COALESCE(data->>%s, ''))) > 0"
+            for _ in search_fields
+        ) + ')')
+        for field in search_fields:
+            where_params.extend((term, field))
+
+    sort_terms = []
+    order_params = []
+    for kind, field, direction, *extra in order_by:
+        direction = 'DESC' if direction == 'DESC' else 'ASC'
+        if kind == 'text':
+            sort_terms.append(f"LOWER(COALESCE(data->>%s, '')) {direction}")
+            order_params.append(field)
+        elif kind == 'raw':
+            sort_terms.append(f"COALESCE(data->>%s, '') {direction}")
+            order_params.append(field)
+        elif kind == 'status_priority':
+            sort_terms.append("CASE WHEN data->>%s = %s THEN 0 ELSE 1 END ASC")
+            order_params.extend((field, extra[0]))
+        elif kind == 'id':
+            sort_terms.append(f'id {direction}')
+        else:
+            raise ValueError(f'Unsupported sheet order kind: {kind}')
+    if not sort_terms:
+        sort_terms.append('id ASC')
+    order_sql = ', '.join(sort_terms)
+
+    offset = (page - 1) * page_size
+    records = fetch_all_(
+        f'''
+        WITH filtered AS MATERIALIZED (
+            SELECT id, data FROM sheet_rows WHERE {' AND '.join(where)}
+        ),
+        counts AS (
+            SELECT COUNT(*) AS total FROM filtered
+        ),
+        ranked AS (
+            SELECT id, data, ROW_NUMBER() OVER (ORDER BY {order_sql}) AS page_order
+            FROM filtered
+        ),
+        page AS (
+            SELECT id, data, page_order FROM ranked
+            WHERE page_order > %s AND page_order <= %s
+        )
+        SELECT counts.total, page.id, page.data
+        FROM counts LEFT JOIN page ON TRUE
+        ORDER BY page.page_order
+        ''',
+        tuple(where_params) + tuple(order_params) + (offset, offset + page_size),
+    )
+    rows = []
+    for record in records:
+        if record['id'] is None:
+            continue
+        row = dict(record['data'] or {})
+        row['__row'] = record['id']
+        rows.append(row)
+    stats = records[0] if records else {'total': 0}
+    return {'total': int(stats['total']), 'rows': rows}
+
+
+def query_workflow_page_(
+    name,
+    user,
+    params,
+    completed,
+    admin_active_status,
+    pending_status_by_role,
+    exclude_status=None,
+):
+    """Apply the shared branch, search, ordering, and paging rules for workflow lists."""
+    params = params or {}
+    filters = []
+    if user.get('role') not in config.GLOBAL_VISIBILITY_ROLES:
+        filters.append(('Branch', 'eq', user.get('branch') or ''))
+    elif params.get('branch'):
+        filters.append(('Branch', 'eq', params['branch']))
+    if params.get('batch'):
+        batch = str(params['batch']).strip()
+        if batch:
+            filters.append(('Batch Name', 'contains', batch))
+    if params.get('status'):
+        filters.append(('Status', 'eq', params['status']))
+    if exclude_status is not None:
+        filters.append(('Status', 'distinct', exclude_status))
+    if not completed and user.get('role') == config.ROLE_ADMIN and admin_active_status:
+        filters.append(('Status', 'eq', admin_active_status))
+
+    sort_by = params.get('sortBy')
+    if sort_by not in ('MID', 'Student Name', 'Branch', 'Status'):
+        sort_by = None
+    order_by = []
+    if sort_by:
+        direction = 'DESC' if str(params.get('sortDir') or 'asc').lower() == 'desc' else 'ASC'
+        order_by.append(('text', sort_by, direction))
+    elif not completed and user.get('role') == config.ROLE_HEAD_OFFICE:
+        order_by.append(('status_priority', 'Status', 'ASC', pending_status_by_role.get(config.ROLE_HEAD_OFFICE, '')))
+    order_by.extend((('raw', 'Entry Date', 'DESC'), ('id', '', 'ASC')))
+
+    page = max(int(params.get('page') or 1), 1)
+    page_size = max(min(int(params.get('pageSize') or 25), 9999), 1)
+    result = query_sheet_page_(
+        name,
+        filters=filters,
+        search=params.get('search'),
+        search_fields=('MID', 'Student Name', 'Phone Number 1', 'Phone Number 2', 'Phone Number 3'),
+        order_by=order_by,
+        page=page,
+        page_size=page_size,
+    )
+    return {
+        'total': result['total'],
+        'page': page,
+        'pageSize': page_size,
+        'rows': result['rows'],
+    }
+
+
+def query_cleanup_rows_(
+    name,
+    cutoff_date,
+    fields,
+    approved_only=False,
+    screenshot_fields=(),
+):
+    """Fetch only older cleanup candidates and the fields their jobs need."""
+    selected_fields = list(dict.fromkeys(fields))
+    selected = ', '.join('%s, data->%s' for _ in selected_fields)
+    where = [
+        'sheet_name = %s',
+        "SUBSTRING(COALESCE(data->>'Approval Date', '') FROM 1 FOR 10) <= %s",
+    ]
+    params = []
+    for field in selected_fields:
+        params.extend((field, field))
+    params.extend((name, cutoff_date))
+    if approved_only:
+        where.append("data->>'Admin Approval' = 'APPROVED'")
+    if screenshot_fields:
+        screenshot_conditions = []
+        for field in screenshot_fields:
+            screenshot_conditions.append(
+                "(COALESCE(data->>%s, '') <> '' AND "
+                "CASE WHEN jsonb_typeof(data->%s) = 'array' "
+                "THEN jsonb_array_length(data->%s) > 0 ELSE TRUE END)"
+            )
+            params.extend((field, field, field))
+        where.append('(' + ' OR '.join(screenshot_conditions) + ')')
+
+    records = fetch_all_(
+        f'''
+        SELECT id, jsonb_build_object({selected}) AS data
+        FROM sheet_rows
+        WHERE {' AND '.join(where)}
+        ORDER BY id ASC
+        ''',
+        tuple(params),
+    )
+    rows = []
+    for record in records:
+        row = dict(record['data'] or {})
+        row['__row'] = record['id']
+        rows.append(row)
+    return rows
 
 
 def validate_phone_numbers_(phone1, phone2, phone3=''):

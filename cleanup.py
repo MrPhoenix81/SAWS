@@ -32,7 +32,10 @@ from datetime import datetime, timedelta, timezone
 
 import config
 import storage
-from db_utils import read_sheet_as_objects_, delete_row_, get_setting_, append_row_, now_iso_, collect_screenshot_keys_
+from db_utils import (
+    delete_row_, get_setting_, append_row_, now_iso_, collect_screenshot_keys_,
+    query_cleanup_rows_,
+)
 
 # (Completed sheet, workflow label) pairs this job sweeps.
 _COMPLETED_SHEETS = [
@@ -88,9 +91,22 @@ def run_cleanup_(now=None):
     now = now or datetime.now()
     last_backup_at = _last_successful_backup_at_()
     deleted, skipped = 0, 0
+    cutoff_date = (now - timedelta(days=config.RECORD_RETENTION_DAYS)).strftime('%Y-%m-%d')
+    screenshot_fields = [
+        config.SCREENSHOT_FIELD_SCM,
+        config.SCREENSHOT_FIELD_HOF,
+        config.SCREENSHOT_FIELD_MANAGER,
+        config.SCREENSHOT_FIELD_TRANSFER,
+        config.SCREENSHOT_FIELD_INACTIVE,
+    ]
 
     for sheet_name, sheet_label in _COMPLETED_SHEETS:
-        rows = read_sheet_as_objects_(sheet_name)
+        rows = query_cleanup_rows_(
+            sheet_name,
+            cutoff_date,
+            ['MID', 'Student Name', 'Approval Date', 'Admin Approval'] + screenshot_fields,
+            approved_only=True,
+        )
         print(f'Fetch complete: {sheet_name} ({len(rows)} row(s)).')
         for row in rows:
             mid = row.get('MID')

@@ -326,9 +326,8 @@ export default function Overview() {
       setInactiveMidSearch('');
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['inactive'] });
+      queryClient.invalidateQueries({ queryKey: ['students'] });
       queryClient.invalidateQueries({ queryKey: ['inactive-convertible-search'] });
-      queryClient.invalidateQueries({ queryKey: ['activeCounts'] });
-      queryClient.invalidateQueries({ queryKey: ['notifications'] });
     },
     onError: (error) => setConversionError(conversionErrorText(error))
   });
@@ -795,69 +794,136 @@ export default function Overview() {
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-            <div className="bg-white rounded-lg border border-ink-100 shadow-panel p-5 flex flex-col">
-              <h3 className="text-sm font-medium mb-3 shrink-0">Monthly chart</h3>
-              <div className="flex-1 min-h-[220px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={data.charts.monthlyTrend}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                    <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={2} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="count" stroke="#12163F" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
+            <div className="bg-white rounded-lg border border-ink-100 shadow-panel p-5 flex flex-col min-w-0 lg:col-span-2">
+              <h3 className="text-sm font-medium mb-3 shrink-0">Total records by branch and workflow</h3>
+              <div className="branch-workflow-scroll relative max-h-[288px] overflow-y-auto overflow-x-auto bg-white">
+                <table className="branch-workflow-table w-full min-w-[620px] border-separate border-spacing-0 text-xs text-right">
+                  <thead className="sticky top-0 z-30 bg-white">
+                    <tr className="bg-white">
+                      <th rowSpan={2} className="branch-workflow-branch-header h-8 border-b border-ink-100 bg-white px-2 py-0 text-left font-medium">
+                        Branch
+                      </th>
+                      {(['Discontinue', 'Inactive', 'Transfer'] as const)
+                        .filter((workflow) => !workflowFilter || workflow === workflowFilter)
+                        .map((workflow) => (
+                          <th key={workflow} colSpan={3} className="h-8 border-b border-ink-100 bg-white px-2 py-0 text-center font-medium">
+                            {workflow}
+                          </th>
+                        ))}
+                    </tr>
+                    <tr className="bg-white text-ink-700/60">
+                      {(['Discontinue', 'Inactive', 'Transfer'] as const)
+                        .filter((workflow) => !workflowFilter || workflow === workflowFilter)
+                        .flatMap((workflow) => (
+                          ['Active', 'Approved', 'Total'].map((label) => (
+                            <th key={`${workflow}-${label}`} className="h-8 border-b border-ink-100 bg-white px-2 py-0 font-medium">
+                              {label}
+                            </th>
+                          ))
+                        ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.charts.branchWorkflowCount.map((entry) => (
+                      <tr key={entry.branch} className="h-8 border-b border-ink-50 last:border-0">
+                          <th className="branch-workflow-branch-cell h-8 px-2 py-0 text-left font-medium whitespace-nowrap">{entry.branch}</th>
+                        {(['Discontinue', 'Inactive', 'Transfer'] as const)
+                          .filter((workflow) => !workflowFilter || workflow === workflowFilter)
+                          .flatMap((workflow) => {
+                            const counts = entry.workflows[workflow];
+                            return [
+                              <td key={`${workflow}-active`} className="h-8 px-2 py-0">{counts?.active ?? 0}</td>,
+                              <td key={`${workflow}-approved`} className="h-8 px-2 py-0">{counts?.approved ?? 0}</td>,
+                              <td key={`${workflow}-total`} className="h-8 px-2 py-0 font-medium">{counts?.total ?? 0}</td>
+                            ];
+                          })}
+                      </tr>
+                    ))}
+                    {data.charts.branchWorkflowCount.length === 0 && (
+                      <tr>
+                        <td colSpan={1 + 3 * (workflowFilter ? 1 : 3)} className="px-2 py-6 text-center text-ink-700/50">
+                          No branch records found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
 
             {(workflowFilter ? [workflowFilter as 'Discontinue' | 'Inactive' | 'Transfer'] : ['Discontinue', 'Inactive', 'Transfer'] as const).map((workflow) => {
               const rows = data.charts.statusDistribution[workflow];
               return (
-                <div key={workflow} className="bg-white rounded-lg border border-ink-100 shadow-panel p-5 flex flex-col">
+                <div key={workflow} className={`bg-white rounded-lg border border-ink-100 shadow-panel p-5 flex flex-col ${workflow === 'Discontinue' ? 'lg:col-span-2' : ''}`}>
                   <h3 className="text-sm font-medium mb-3 shrink-0">Status distribution — {workflow}</h3>
                   <div className="flex-1 min-h-[220px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
                         data={rows}
-                        layout="vertical"
-                        margin={{ left: 8, right: 24, top: 4, bottom: 4 }}
+                        layout={workflow === 'Discontinue' ? 'horizontal' : 'vertical'}
+                        margin={workflow === 'Discontinue'
+                          ? { left: 8, right: 24, top: 12, bottom: 36 }
+                          : { left: 8, right: 24, top: 4, bottom: 4 }}
                       >
-                        <CartesianGrid strokeDasharray="3 3" stroke="#eee" horizontal={false} />
-                        <XAxis type="number" allowDecimals={false} tick={{ fontSize: 10 }} />
-                        <YAxis
-                          type="category"
-                          dataKey="status"
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          stroke="#eee"
+                          horizontal={workflow !== 'Discontinue'}
+                          vertical={workflow === 'Discontinue'}
+                        />
+                        <XAxis
+                          type={workflow === 'Discontinue' ? 'category' : 'number'}
+                          dataKey={workflow === 'Discontinue' ? 'status' : undefined}
+                          allowDecimals={false}
                           tick={{ fontSize: 10 }}
-                          width={140}
+                          angle={workflow === 'Discontinue' ? -30 : 0}
+                          textAnchor={workflow === 'Discontinue' ? 'end' : 'middle'}
+                          height={workflow === 'Discontinue' ? 72 : undefined}
+                          interval={workflow === 'Discontinue' ? 0 : undefined}
+                        />
+                        <YAxis
+                          type={workflow === 'Discontinue' ? 'number' : 'category'}
+                          dataKey={workflow === 'Discontinue' ? undefined : 'status'}
+                          tick={{ fontSize: 10 }}
+                          width={workflow === 'Discontinue' ? undefined : 140}
+                          allowDecimals={false}
                         />
                         <Tooltip />
-                        <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={18}>
-                          <LabelList
-                            dataKey="count"
-                            content={(props: {
-                              x?: number | string; y?: number | string;
-                              width?: number | string; height?: number | string;
-                              value?: number | string; index?: number;
-                            }) => {
-                              const x = Number(props.x ?? 0);
-                              const y = Number(props.y ?? 0);
-                              const width = Number(props.width ?? 0);
-                              const height = Number(props.height ?? 0);
-                              const index = props.index ?? 0;
-                              return (
-                                <text
-                                  x={x + width - 6}
-                                  y={y + height / 2}
-                                  dy={4}
-                                  textAnchor="end"
-                                  fontSize={11}
-                                  fill={labelColorForRank(index)}
-                                >
-                                  {props.value}
-                                </text>
-                              );
-                            }}
-                          />
+                        <Bar
+                          dataKey="count"
+                          radius={workflow === 'Discontinue' ? [4, 4, 0, 0] : [0, 4, 4, 0]}
+                          barSize={workflow === 'Discontinue' ? 28 : 18}
+                        >
+                          {workflow === 'Discontinue' ? (
+                            <LabelList dataKey="count" position="top" fill="#0E1230" fontSize={10} />
+                          ) : (
+                            <LabelList
+                              dataKey="count"
+                              content={(props: {
+                                x?: number | string; y?: number | string;
+                                width?: number | string; height?: number | string;
+                                value?: number | string; index?: number;
+                              }) => {
+                                const x = Number(props.x ?? 0);
+                                const y = Number(props.y ?? 0);
+                                const width = Number(props.width ?? 0);
+                                const height = Number(props.height ?? 0);
+                                const index = props.index ?? 0;
+                                return (
+                                  <text
+                                    x={x + width - 6}
+                                    y={y + height / 2}
+                                    dy={4}
+                                    textAnchor="end"
+                                    fontSize={11}
+                                    fill={labelColorForRank(index)}
+                                  >
+                                    {props.value}
+                                  </text>
+                                );
+                              }}
+                            />
+                          )}
                           {rows.map((entry, index) => (
                             <Cell key={entry.status} fill={shadeForRank(index)} />
                           ))}
@@ -869,21 +935,36 @@ export default function Overview() {
               );
             })}
 
-            <div className="bg-white rounded-lg border border-ink-100 shadow-panel p-5 flex flex-col lg:col-span-2">
-              <h3 className="text-sm font-medium mb-3 shrink-0">Today&rsquo;s entries by branch</h3>
+            <div className="bg-white rounded-lg border border-ink-100 shadow-panel p-5 flex flex-col">
+              <h3 className="text-sm font-medium mb-3 shrink-0">Today&rsquo;s Branch Activity</h3>
               <div className="flex-1 min-h-[220px]">
                 <ResponsiveContainer width="100%" height={260}>
                   <BarChart data={data.charts.dailyBranchCount} margin={{ bottom: 8 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
                     <XAxis dataKey="branch" tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={60} />
                     <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
-                    <Tooltip formatter={(value: number) => [value, 'Entries']} />
-                    <Bar dataKey="count" name="Entries" radius={[4, 4, 0, 0]}>
+                    <Tooltip formatter={(value: number) => [value, 'Logs']} />
+                    <Bar dataKey="count" name="Logs" radius={[4, 4, 0, 0]}>
                       {data.charts.dailyBranchCount.map((entry, index) => (
                         <Cell key={entry.branch} fill={shadeForRank(index)} />
                       ))}
                     </Bar>
                   </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg border border-ink-100 shadow-panel p-5 flex flex-col">
+              <h3 className="text-sm font-medium mb-3 shrink-0">Monthly chart</h3>
+              <div className="flex-1 min-h-[220px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={data.charts.monthlyTrend}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                    <XAxis dataKey="label" tick={{ fontSize: 10 }} interval={2} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                    <Tooltip />
+                    <Line type="monotone" dataKey="count" stroke="#12163F" strokeWidth={2} dot={false} />
+                  </LineChart>
                 </ResponsiveContainer>
               </div>
             </div>

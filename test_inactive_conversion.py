@@ -55,9 +55,19 @@ class InactiveConversionTests(unittest.TestCase):
 
     def test_converted_records_are_hidden_from_inactive_lists_and_lookups(self):
         converted = {**self.row, 'Status': config.STATUS_INACTIVE_CONVERTED, 'Reason': ''}
-        with patch.object(inactive, 'read_sheet_as_objects_', return_value=[converted]):
+        with patch.object(
+            inactive,
+            'query_workflow_page_',
+            return_value={
+                'total': 0,
+                'page': 1,
+                'pageSize': 25,
+                'rows': [],
+            },
+        ) as query:
             result = inactive.list_inactive_(self.user, completed=True)
 
+        self.assertEqual(query.call_args.kwargs['exclude_status'], config.STATUS_INACTIVE_CONVERTED)
         self.assertEqual(result['total'], 0)
         with patch.object(inactive, '_find_row_', return_value=converted):
             with self.assertRaises(ApiError) as raised:
@@ -102,7 +112,6 @@ class InactiveConversionTests(unittest.TestCase):
             patch.object(inactive, 'mid_exists_anywhere_', return_value=False),
             patch.object(inactive, 'now_iso_', return_value='2026-11-05T12:00:00'),
             patch.object(inactive, 'convert_inactive_row_to_discontinue_', return_value=True) as persist,
-            patch.object(inactive, 'notify_branch_roles_'),
             patch.object(inactive, 'log_audit_'),
             patch.object(inactive, 'invalidate_cache_'),
             patch('students._upload_reason_screenshots_', return_value=['scm-image-key']),
@@ -144,8 +153,8 @@ class InactiveConversionTests(unittest.TestCase):
         }
         with patch.object(
             students,
-            'read_sheet_as_objects_',
-            return_value=[converted_inactive_row],
+            'fetch_all_',
+            return_value=[{'data': converted_inactive_row}],
         ):
             result = students._attach_inactive_conversion_dates_(student_rows)
 

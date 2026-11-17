@@ -33,12 +33,12 @@ import {
   rejectInactive,
   deleteInactive,
   getInactiveScreenshotUrl,
-  markPageSeen,
   ApiError
 } from '@/lib/apiClient';
 import { useAuth } from '@/context/AuthContext';
 import {
   ALL_ROWS_PAGE_SIZE,
+  DEFAULT_PAGE_SIZE,
   BranchFilter,
   BatchFilter,
   DownloadMenu,
@@ -480,14 +480,6 @@ export default function Inactive() {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Item 7: opening Inactive clears its sidebar "unseen" badge.
-  useEffect(() => {
-    markPageSeen('inactive')
-      .then(() => queryClient.invalidateQueries({ queryKey: ['activeCounts'] }))
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const [tab, setTab] = useState<'active' | 'completed'>(
     searchParams.get('tab') === 'completed' ? 'completed' : 'active'
   );
@@ -495,7 +487,7 @@ export default function Inactive() {
   const [branchFilter, setBranchFilter] = useState('');
   const [batchFilter, setBatchFilter] = useState('');
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<PageSizeOption>(15);
+  const [pageSize, setPageSize] = useState<PageSizeOption>(DEFAULT_PAGE_SIZE);
   const effectivePageSize = pageSize === 'all' ? ALL_ROWS_PAGE_SIZE : pageSize;
   const [sortBy, setSortBy] = useState('');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -589,8 +581,6 @@ export default function Inactive() {
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['inactive'] });
-    queryClient.invalidateQueries({ queryKey: ['notifications'] });
-    queryClient.invalidateQueries({ queryKey: ['activeCounts'] });
   };
 
   const submitMutation = useMutation({

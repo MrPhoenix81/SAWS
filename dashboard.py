@@ -190,10 +190,41 @@ def get_dashboard_data_(user, params=None):
                 if (entry_date.year, entry_date.month) == (today.year, today.month):
                     monthly_branch_counts[branch] += 1
 
+        branch_workflow_counts = defaultdict(
+            lambda: defaultdict(lambda: {'active': 0, 'approved': 0, 'total': 0})
+        )
+        for name in selected_workflows:
+            active, completed, _ = workflow_rows[name]
+            for rows, state in ((active, 'active'), (completed, 'approved')):
+                for row in rows:
+                    branch = str(row.get('Branch') or 'Unknown').strip() or 'Unknown'
+                    branch_workflow_count = branch_workflow_counts[branch][name]
+                    branch_workflow_count[state] += 1
+                    branch_workflow_count['total'] += 1
+
+        branch_names = set(branch_workflow_counts)
+        if is_global and not requested_branch:
+            branch_names.update(
+                str(branch.get('name') or '').strip()
+                for branch in list_branches_(False)
+                if str(branch.get('name') or '').strip()
+            )
+        elif requested_branch:
+            branch_names.add(requested_branch)
+        branch_workflow_count = [
+            {'branch': branch, 'workflows': {
+                name: branch_workflow_counts.get(branch, {}).get(
+                    name, {'active': 0, 'approved': 0, 'total': 0}
+                )
+                for name in selected_workflows
+            }}
+            for branch in sorted(branch_names)
+        ]
+
         daily_branch_count = [
             {'branch': branch, 'count': count}
             for branch, count in sorted(
-                daily_branch_counts.items(),
+                ((branch, count) for branch, count in daily_branch_counts.items() if count > 0),
                 key=lambda item: (-item[1], item[0]),
             )
         ]
@@ -221,6 +252,7 @@ def get_dashboard_data_(user, params=None):
             'charts': {
                 'monthlyTrend': monthly_trend,
                 'dailyBranchCount': daily_branch_count,
+                'branchWorkflowCount': branch_workflow_count,
                 'monthlyBranchCount': monthly_branch_count,
                 'branchComparison': branch_comparison,
                 'statusDistribution': status_distribution,

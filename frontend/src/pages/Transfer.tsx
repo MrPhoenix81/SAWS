@@ -2,10 +2,11 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Search, X, Check, XCircle, Pencil, Trash2, ChevronLeft, ChevronRight, Loader2, Download, FileText, FileSpreadsheet, FileDown, Copy, CheckCheck, ChevronDown, ImageIcon } from 'lucide-react';
-import { listTransfer, scmCorrectTransfer, headOfficeUpdateTransfer, headOfficeApproveTransfer, headOfficeRejectTransfer, approveTransfer, rejectTransfer, deleteTransfer, getTransferScreenshotUrl, markPageSeen, listBranches, ApiError } from '@/lib/apiClient';
+import { listTransfer, scmCorrectTransfer, headOfficeUpdateTransfer, headOfficeApproveTransfer, headOfficeRejectTransfer, approveTransfer, rejectTransfer, deleteTransfer, getTransferScreenshotUrl, listBranches, ApiError } from '@/lib/apiClient';
 import { useAuth } from '@/context/AuthContext';
 import {
   ALL_ROWS_PAGE_SIZE,
+  DEFAULT_PAGE_SIZE,
   BranchFilter,
   BatchFilter,
   DownloadMenu,
@@ -300,7 +301,7 @@ export default function Transfer() {
   const {user}=useAuth(); const qc=useQueryClient(); const [sp,setSp]=useSearchParams();
   const [tab,setTab]=useState<'active'|'completed'>(sp.get('tab')==='completed'?'completed':'active');
   const [search,setSearch]=useState(sp.get('search')||''); const [branchFilter,setBranchFilter]=useState(''); const [batchFilter,setBatchFilter]=useState('');
-  const [page,setPage]=useState(1); const [pageSize,setPageSize]=useState<PageSizeOption>(15);
+  const [page,setPage]=useState(1); const [pageSize,setPageSize]=useState<PageSizeOption>(DEFAULT_PAGE_SIZE);
   const effectivePageSize=pageSize==='all'?ALL_ROWS_PAGE_SIZE:pageSize;
   const [sortBy,setSortBy]=useState(''); const [sortDir,setSortDir]=useState<'asc'|'desc'>('asc');
   function toggleSort(field:string){const next=nextSortState(field,sortBy,sortDir);setSortBy(next.sortBy);setSortDir(next.sortDir);setPage(1);}
@@ -309,8 +310,6 @@ export default function Transfer() {
   const [deleteTarget,setDeleteTarget]=useState<TransferEntry|null>(null); const [deleteConfirmText,setDeleteConfirmText]=useState(''); const [selectedTransfer,setSelectedTransfer]=useState<TransferEntry|null>(null); const [error,setError]=useState<string|null>(null); const [exporting,setExporting]=useState(false);
 
   React.useEffect(()=>{const t=sp.get('tab')==='completed'?'completed':'active';if(t!==tab){setTab(t);setPage(1)} const q=sp.get('search')||'';if(q!==search){setSearch(q);setPage(1)}},[sp]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Item 7: opening Transfer clears its sidebar "unseen" badge.
-  React.useEffect(()=>{markPageSeen('transfer').then(()=>qc.invalidateQueries({queryKey:['activeCounts']})).catch(()=>{})},[]); // eslint-disable-line react-hooks/exhaustive-deps
   const params=useMemo(()=>({search:search.trim()||undefined,branch:branchFilter||undefined,batch:batchFilter||undefined,sortBy:sortBy||undefined,sortDir:sortBy?sortDir:undefined,page,pageSize:effectivePageSize}),[search,branchFilter,batchFilter,sortBy,sortDir,page,effectivePageSize]);
   const showBranch=user?.role==='Head Office'; // Head Office sees every branch, so show which one each row belongs to
   const branchesQuery=useQuery({queryKey:['branches'],queryFn:listBranches,enabled:user?.role==='Admin'||user?.role==='Head Office'});
@@ -325,7 +324,7 @@ export default function Transfer() {
     next.delete('openMid');
     setSp(next,{replace:true});
   },[query.data,query.isFetching,sp,setSp]);
-  const refresh=()=>{qc.invalidateQueries({queryKey:['transfer']});qc.invalidateQueries({queryKey:['notifications']});qc.invalidateQueries({queryKey:['activeCounts']});};
+  const refresh=()=>{qc.invalidateQueries({queryKey:['transfer']});};
   const hoEdit=useMutation({
     mutationFn:()=>headOfficeUpdateTransfer(editTarget!.MID,{'MID':form.mid,'Student Name':form.studentName,'Phone Number 1':form.phone1,'Phone Number 2':form.phone2||undefined,'Phone Number 3':form.phone3||undefined,'Transfer To Branch':form.transferToBranch,Reason:form.reason}),
     onSuccess:()=>{setEditTarget(null);setForm(emptyForm);refresh()},

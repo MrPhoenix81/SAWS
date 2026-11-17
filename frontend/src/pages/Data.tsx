@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as XLSX from 'xlsx';
 import {
   UploadCloud,
@@ -461,6 +461,7 @@ function UploadSection({ branchNames }: { branchNames: string[] }) {
   const [fileName, setFileName] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { runTask } = useBulkTasks();
+  const queryClient = useQueryClient();
 
   const templateMutation = useMutation({
     mutationFn: () => getBulkTemplate(workflow),
@@ -483,6 +484,15 @@ function UploadSection({ branchNames }: { branchNames: string[] }) {
           res = await bulkImport(workflow, sheet, rows);
         } catch (err) {
           throw new Error(err instanceof ApiError ? err.message || 'Upload failed.' : 'Upload failed. Please try again.');
+        }
+
+        if (sheet === 'active') {
+          const queryKey = workflow === 'discontinue'
+            ? ['students']
+            : workflow === 'inactive'
+              ? ['inactive']
+              : ['transfer'];
+          await queryClient.invalidateQueries({ queryKey });
         }
 
         const message = `${res.inserted} of ${res.total} row(s) uploaded${res.updated > 0 ? ` \u00b7 ${res.updated} status updated` : ''}${res.skipped > 0 ? ` \u00b7 ${res.skipped} skipped` : ''}.`;
@@ -647,6 +657,7 @@ function DeleteSection({ branchNames }: { branchNames: string[] }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { runTask } = useBulkTasks();
+  const queryClient = useQueryClient();
 
   function startDelete() {
     const combos: { workflow: BulkWorkflow; sheet: BulkSheet }[] = [];
@@ -672,6 +683,13 @@ function DeleteSection({ branchNames }: { branchNames: string[] }) {
           });
           const result = await bulkDelete(workflow, sheet, branches, 'DELETE');
           deleted += result.deleted;
+        }
+        if (sheets.includes('active')) {
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['students'] }),
+            queryClient.invalidateQueries({ queryKey: ['inactive'] }),
+            queryClient.invalidateQueries({ queryKey: ['transfer'] })
+          ]);
         }
         return { message: `Deleted ${deleted} row(s).` };
       }

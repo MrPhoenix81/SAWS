@@ -15,12 +15,14 @@ import {
   Database,
   Link2,
   ClipboardList,
+  Moon,
+  Sun,
   type LucideIcon
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
-import NotificationBell from '@/components/NotificationBell';
 import BulkTaskTray from '@/components/BulkTaskTray';
-import { callApi } from '@/lib/apiClient';
+import { listInactive, listStudents, listTransfer } from '@/lib/apiClient';
+import { DEFAULT_PAGE_SIZE } from '@/components/ListControls';
 
 type NavItem = {
   to: string;
@@ -33,6 +35,18 @@ type ActiveCounts = {
   discontinue: number;
   inactive: number;
   transfer: number;
+};
+
+type AwaitingActionRow = {
+  'Awaiting My Action'?: boolean;
+};
+
+function countAwaitingAction(rows: AwaitingActionRow[] | undefined) {
+  return rows?.filter((row) => row['Awaiting My Action']).length ?? 0;
+}
+
+type ThemeTransitionDocument = Document & {
+  startViewTransition?: (callback: () => void) => { finished: Promise<void> };
 };
 
 function CountBadge({ count }: { count: number }) {
@@ -74,8 +88,8 @@ function NewEntryNavItem() {
 /**
  * "Students" sidebar entry. Its Active / Discontinued sub-links stay hidden
  * until the item is expanded - either by clicking it, or automatically
- * while already on the Students page (so a refresh or a deep link, e.g.
- * from NotificationBell, doesn't leave the submenu collapsed).
+ * while already on the Students page so a deep link doesn't leave the
+ * submenu collapsed.
  */
 function StudentsNavItem({ count }: { count: number }) {
   const location = useLocation();
@@ -250,45 +264,38 @@ export default function AppLayout() {
   ].includes(routerLocation.pathname);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const [isDarkTheme, setIsDarkTheme] = useState(() =>
+    document.documentElement.classList.contains('dark')
+  );
+  const themeTransitionRef = useRef<number | null>(null);
+  const themeTransitionGenerationRef = useRef(0);
 
   const canManageUsers = user?.role === 'Admin' || user?.role === 'Head Office';
   const canManageBranches = user?.role === 'Admin';
   const canManageData = user?.role === 'Admin';
   const hasAdminSection = canManageUsers || canManageBranches || canManageData;
 
-  // Shared queryKey (['activeCounts']) so any page can call
-  // queryClient.invalidateQueries({queryKey:['activeCounts']}) right after
-  // an approve/reject/delete succeeds, making the sidebar badge update
-  // immediately instead of waiting for the next poll below.
-  //
-  // The red bubble now shows PENDING cases - how many cases are waiting
-  // for THIS user's action right now (Admin: pending admin verification,
-  // Head Office: pending approval, SCM/HOF/Manager: cases they can act on).
-  // It stays until the case is actually approved/rejected/submitted; it
-  // does NOT clear just because the page was opened.
-  const activeCountsQuery = useQuery({
-    queryKey: ['activeCounts'],
-    queryFn: async (): Promise<ActiveCounts> => {
-      const counts = await callApi<Partial<ActiveCounts>>('pages.pendingCounts', {});
-      return {
-        discontinue: Number(counts.discontinue ?? 0),
-        inactive: Number(counts.inactive ?? 0),
-        transfer: Number(counts.transfer ?? 0),
-      };
-    },
-    enabled: !!user,
-    // Poll every 60 seconds so new cases assigned by other users show up
-    // without a manual refresh.
-    refetchInterval: 60000,
-    // Keep showing the last successful counts if a request fails, rather
-    // than flashing back to 0.
-    placeholderData: (prev: ActiveCounts | undefined) => prev,
+  // Sidebar badges count the row-level flags in these already-fetched pages.
+  const pendingRowsParams = { page: 1, pageSize: DEFAULT_PAGE_SIZE };
+  const discontinueRowsQuery = useQuery({
+    queryKey: ['students', 'response', pendingRowsParams],
+    queryFn: () => listStudents('response', pendingRowsParams),
+    enabled: !!user
   });
-
-  const activeCounts: ActiveCounts = activeCountsQuery.data ?? {
-    discontinue: 0,
-    inactive: 0,
-    transfer: 0,
+  const inactiveRowsQuery = useQuery({
+    queryKey: ['inactive', 'active', pendingRowsParams],
+    queryFn: () => listInactive('response', pendingRowsParams),
+    enabled: !!user
+  });
+  const transferRowsQuery = useQuery({
+    queryKey: ['transfer', 'active', pendingRowsParams],
+    queryFn: () => listTransfer('response', pendingRowsParams),
+    enabled: !!user
+  });
+  const activeCounts: ActiveCounts = {
+    discontinue: countAwaitingAction(discontinueRowsQuery.data?.rows),
+    inactive: countAwaitingAction(inactiveRowsQuery.data?.rows),
+    transfer: countAwaitingAction(transferRowsQuery.data?.rows)
   };
 
   const pageTitle =
@@ -297,6 +304,46 @@ export default function AppLayout() {
       : user?.role === 'Head Office'
       ? 'Student Approval Workflow System'
       : 'Student Approval Workflow System';
+
+  function toggleTheme(event: React.MouseEvent<HTMLButtonElement>) {
+    const nextIsDark = !isDarkTheme;
+    const root = document.documentElement;
+    const updateTheme = () => {
+      root.classList.toggle('dark', nextIsDark);
+      window.localStorage.setItem('saws-theme', nextIsDark ? 'dark' : 'light');
+      setIsDarkTheme(nextIsDark);
+    };
+    const transitionDocument = document as ThemeTransitionDocument;
+
+    if (
+      !window.matchMedia('(prefers-reduced-motion: reduce)').matches &&
+      typeof transitionDocument.startViewTransition === 'function'
+    ) {
+      root.style.setProperty('--theme-transition-x', `${event.clientX}px`);
+      root.style.setProperty('--theme-transition-y', `${event.clientY}px`);
+      const generation = ++themeTransitionGenerationRef.current;
+      const transition = transitionDocument.startViewTransition.call(document, updateTheme);
+      const clearTransitionOrigin = () => {
+        if (themeTransitionGenerationRef.current === generation) {
+          root.style.removeProperty('--theme-transition-x');
+          root.style.removeProperty('--theme-transition-y');
+        }
+      };
+      void transition.finished.then(clearTransitionOrigin, clearTransitionOrigin);
+      return;
+    }
+
+    root.classList.add('theme-transition');
+    updateTheme();
+
+    if (themeTransitionRef.current !== null) {
+      window.clearTimeout(themeTransitionRef.current);
+    }
+    themeTransitionRef.current = window.setTimeout(() => {
+      root.classList.remove('theme-transition');
+      themeTransitionRef.current = null;
+    }, 760);
+  }
 
   React.useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -376,7 +423,18 @@ export default function AppLayout() {
           <h1 className="font-display text-base leading-tight">{pageTitle}</h1>
 
           <div className="flex min-w-0 items-center gap-3">
-            <NotificationBell />
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'}
+              aria-pressed={isDarkTheme}
+              title={isDarkTheme ? 'Switch to light theme' : 'Switch to dark theme'}
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-ink-100 bg-white/70 text-ink-700/70 shadow-sm transition-transform duration-300 hover:scale-105 hover:bg-paper"
+            >
+              {isDarkTheme
+                ? <Sun size={17} className="text-amber transition-transform duration-300" />
+                : <Moon size={17} className="transition-transform duration-300" />}
+            </button>
             <div className="relative" ref={menuRef}>
               <button
                 onClick={() => setMenuOpen((v) => !v)}

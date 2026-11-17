@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Ban, Clock, ArrowLeftRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { submitStudentEntry, submitInactive, submitTransfer, listBranches, ApiError } from '@/lib/apiClient';
@@ -106,6 +106,7 @@ function ScreenshotPreviewGrid({ previews, onRemove }: { previews: string[]; onR
 export default function NewEntry() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [workflow, setWorkflow] = useState<Workflow>('discontinue');
   const [discontinue, setDiscontinue] = useState<DiscontinueForm>(EMPTY_DISCONTINUE);
   const [inactive, setInactive] = useState<InactiveForm>(EMPTY_INACTIVE);
@@ -238,6 +239,7 @@ export default function NewEntry() {
       });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['students'] });
       setDiscontinue(EMPTY_DISCONTINUE);
       clearDraft(draftKey(user?.email, 'discontinue'));
       setRestoredDraftAt((prev) => ({ ...prev, discontinue: null }));
@@ -264,6 +266,7 @@ export default function NewEntry() {
       });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inactive'] });
       setInactive(EMPTY_INACTIVE);
       clearDraft(draftKey(user?.email, 'inactive'));
       setRestoredDraftAt((prev) => ({ ...prev, inactive: null }));
@@ -285,6 +288,7 @@ export default function NewEntry() {
       });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transfer'] });
       setTransfer(EMPTY_TRANSFER);
       clearDraft(draftKey(user?.email, 'transfer'));
       setRestoredDraftAt((prev) => ({ ...prev, transfer: null }));

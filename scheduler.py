@@ -127,7 +127,7 @@ def start_supabase_keepalive_():
 
 def _run_screenshot_cleanup_loop_():
     from datetime import timedelta
-    from db_utils import read_sheet_as_objects_, update_row_fields_, screenshot_keys_
+    from db_utils import query_cleanup_rows_, update_row_fields_, screenshot_keys_
     from storage import delete_screenshots_
 
     # (sheet, [screenshot fields to clear on that sheet]) - the
@@ -146,8 +146,14 @@ def _run_screenshot_cleanup_loop_():
         time.sleep(max(sleep_seconds, 60))
         try:
             cutoff = datetime.now() - timedelta(hours=config.SCREENSHOT_RETENTION_HOURS)
+            cutoff_date = cutoff.strftime('%Y-%m-%d')
             for sheet_name, fields in sheet_fields:
-                rows = read_sheet_as_objects_(sheet_name)
+                rows = query_cleanup_rows_(
+                    sheet_name,
+                    cutoff_date,
+                    ['Approval Date'] + fields,
+                    screenshot_fields=fields,
+                )
                 print(f'Fetch complete: {sheet_name} ({len(rows)} row(s)).')
                 for row in rows:
                     approval_date = row.get('Approval Date')
